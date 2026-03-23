@@ -1,0 +1,84 @@
+# COA Migration System - Production Docker Compose
+
+version: '3.8'
+
+services:
+  # API Service
+  api-service:
+    image: ${DOCKER_REGISTRY:-ghcr.io}/coa-migration/api-service:${VERSION:-latest}
+    container_name: coa-api
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    ports:
+      - "8001:8001"
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ML Service Workers
+  ml-service:
+    image: ${DOCKER_REGISTRY:-ghcr.io}/coa-migration/ml-service:${VERSION:-latest}
+    container_name: coa-ml-worker
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      DATABASE_URL: ${DATABASE_URL}
+    deploy:
+      replicas: ${ML_WORKERS:-2}
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend
+  frontend:
+    image: ${DOCKER_REGISTRY:-ghcr.io}/coa-migration/frontend:${VERSION:-latest}
+    container_name: coa-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api-service
+    deploy:
+      replicas: 2
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Nginx Load Balancer (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: coa-nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "443:443"
+    depends_on:
+      - api-service
+      - frontend
+    profiles:
+      - production
+
+networks:
+  default:
+    name: coa-network
