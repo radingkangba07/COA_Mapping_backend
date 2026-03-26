@@ -12,16 +12,17 @@ Architecture:
 """
 import sys
 import os
+from pathlib import Path
 
 # Add the api-service to Python path for existing services
-sys.path.insert(0, '/app/services/api-service')
+_api_service_path = str(Path(__file__).parent.parent / 'services' / 'api-service')
+sys.path.insert(0, _api_service_path)
 
 from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Query, Header, Response
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import logging
-from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Any
 import uuid
@@ -86,8 +87,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
+# Create a router with the /api/v1 prefix
+api_router = APIRouter(prefix="/api/v1")
 
 
 # ============================================================================
@@ -371,6 +372,132 @@ async def revoke_project_access(
         )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
+# ============================================================================
+# PROJECT CRUD ENDPOINTS (Frontend-facing)
+# ============================================================================
+
+@api_router.get("/projects")
+async def list_projects(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    authorization: Optional[str] = Header(None)
+):
+    """List projects accessible to the current user with pagination."""
+    user_id = await get_current_user_id(authorization)
+    db = get_database()
+
+    from repositories.project_access_repository import ProjectAccessRepository
+    from repositories.project_repository import ProjectRepository
+    access_repo = ProjectAccessRepository(db)
+    project_repo = ProjectRepository(db)
+
+    project_ids = await access_repo.get_user_project_ids(user_id)
+    if not project_ids:
+        return {"projects": [], "total": 0}
+
+    query = {"id": {"$in": project_ids}}
+    total = await project_repo.count(query)
+    projects = await project_repo.find_many(
+        query,
+        sort=[("updated_at", -1)],
+        skip=skip,
+        limit=limit
+    )
+
+    return {"projects": projects, "total": total}
+
+
+@api_router.get("/projects/{project_id}")
+async def get_project(
+    project_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """Get a single project by ID."""
+    user_id = await get_current_user_id(authorization)
+    db = get_database()
+
+    from repositories.project_access_repository import ProjectAccessRepository
+    from repositories.project_repository import ProjectRepository
+    access_repo = ProjectAccessRepository(db)
+    project_repo = ProjectRepository(db)
+
+    access = await access_repo.find_user_access(user_id, project_id)
+    if not access:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    project = await project_repo.find_by_id(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return project
+
+
+@api_router.post("/projects")
+async def create_project_direct(
+    data: ProjectCreate,
+    authorization: Optional[str] = Header(None)
+):
+    """Create a new project."""
+    user_id = await get_current_user_id(authorization)
+    services = get_services()
+
+    result = await services["project"].create_project(
+        name=data.name,
+        source_erp=data.source_erp,
+        target_erp=data.target_erp,
+        company_id=data.company_id,
+        created_by=user_id,
+        description=data.description
+    )
+
+    return result["project"]
+
+
+@api_router.patch("/projects/{project_id}")
+async def update_project_direct(
+    project_id: str,
+    data: Dict[str, Any],
+    authorization: Optional[str] = Header(None)
+):
+    """Update a project (name, description, status)."""
+    user_id = await get_current_user_id(authorization)
+    services = get_services()
+
+    try:
+        result = await services["project"].update_project(project_id, user_id, data)
+        return result["project"]
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@api_router.delete("/projects/{project_id}")
+async def delete_project(
+    project_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """Delete a project and its access entries."""
+    user_id = await get_current_user_id(authorization)
+    db = get_database()
+
+    from repositories.project_access_repository import ProjectAccessRepository
+    from repositories.project_repository import ProjectRepository
+    access_repo = ProjectAccessRepository(db)
+    project_repo = ProjectRepository(db)
+
+    access = await access_repo.find_user_access(user_id, project_id)
+    if not access or access["permission"] != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can delete projects")
+
+    project = await project_repo.find_by_id(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    await access_repo.delete_project_access(project_id)
+    await project_repo.delete_project(project_id)
+
+    return {"status": "deleted"}
 
 
 # ============================================================================
