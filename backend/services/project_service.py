@@ -26,15 +26,16 @@ class ProjectService:
         target_erp: str,
         company_id: str,
         created_by: str,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        company_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create a new project with initial access for creator.
-        
+
         Returns: {success: bool, project: dict}
         """
         # Ensure company exists (create if not)
-        await self.company_repo.get_or_create(company_id)
+        await self.company_repo.get_or_create(company_id, name=company_name)
         
         # Create project
         project = await self.project_repo.create_project(
