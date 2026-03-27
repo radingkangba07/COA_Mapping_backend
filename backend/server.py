@@ -191,9 +191,10 @@ class UserLogin(BaseModel):
 
 class ProjectCreate(BaseModel):
     name: str
-    source_erp: str
-    target_erp: str
+    source_erp: Optional[str] = ""
+    target_erp: Optional[str] = ""
     company_id: str
+    company_name: Optional[str] = None
     description: Optional[str] = None
 
 
@@ -281,7 +282,8 @@ async def create_project(
         target_erp=data.target_erp,
         company_id=data.company_id,
         created_by=user_id,
-        description=data.description
+        description=data.description,
+        company_name=data.company_name
     )
 
 
@@ -449,7 +451,8 @@ async def create_project_direct(
         target_erp=data.target_erp,
         company_id=data.company_id,
         created_by=user_id,
-        description=data.description
+        description=data.description,
+        company_name=data.company_name
     )
 
     return result["project"]
