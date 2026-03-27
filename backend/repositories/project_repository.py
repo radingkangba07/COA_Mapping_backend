@@ -31,10 +31,10 @@ class ProjectRepository(BaseRepository):
     async def create_project(
         self,
         name: str,
-        source_erp: str,
-        target_erp: str,
-        company_id: str,
-        created_by: str,
+        source_erp: str = "",
+        target_erp: str = "",
+        company_id: str = "",
+        created_by: str = "",
         description: Optional[str] = None,
         status: str = "draft"
     ) -> Dict[str, Any]:
