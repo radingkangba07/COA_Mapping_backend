@@ -504,6 +504,121 @@ async def delete_project(
 
 
 # ============================================================================
+# FILE ENDPOINTS (Frontend-facing aliases for /storage/*)
+# ============================================================================
+
+@api_router.post("/files/upload")
+async def upload_file_to_project(
+    file: UploadFile = File(...),
+    source_erp: str = "unknown",
+    target_erp: str = "unknown"
+):
+    """Upload and parse a file (frontend-facing alias for /upload)."""
+    return await upload_file(file=file, source_erp=source_erp, target_erp=target_erp)
+
+
+@api_router.get("/files/{file_id}")
+async def get_file(
+    file_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """Get file metadata (frontend-facing alias for /storage/files/{file_id})."""
+    return await get_file_metadata(file_id=file_id, authorization=authorization)
+
+
+@api_router.get("/files/{file_id}/download")
+async def download_project_file(
+    file_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """Download a file (frontend-facing alias for /storage/download/{file_id})."""
+    return await download_file(file_id=file_id, authorization=authorization)
+
+
+@api_router.get("/files/project/{project_id}")
+async def list_files_for_project(
+    project_id: str,
+    file_type: Optional[str] = Query(default=None),
+    authorization: Optional[str] = Header(None)
+):
+    """List files for a project (frontend-facing alias for /storage/project/{project_id}/files)."""
+    return await list_project_files(
+        project_id=project_id,
+        file_type=file_type,
+        authorization=authorization
+    )
+
+
+@api_router.delete("/files/{file_id}")
+async def delete_project_file(
+    file_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """Delete a file (frontend-facing alias for /storage/files/{file_id})."""
+    return await delete_file(file_id=file_id, authorization=authorization)
+
+
+# ============================================================================
+# MAPPING ENDPOINTS (Frontend-facing aliases)
+# ============================================================================
+
+@api_router.post("/mappings/hierarchical")
+async def hierarchical_mapping_alias(
+    request: HierarchicalMappingRequest,
+    source_erp: str = Query(default="unknown"),
+    target_erp: str = Query(default="unknown")
+):
+    """Frontend-facing alias for /hierarchical-mapping."""
+    return await create_hierarchical_mapping(
+        request=request, source_erp=source_erp, target_erp=target_erp
+    )
+
+
+@api_router.post("/mappings/project/{project_id}/export")
+async def export_project_mappings(
+    project_id: str,
+    body: Dict[str, Any],
+    authorization: Optional[str] = Header(None)
+):
+    """Export project mappings as Excel file."""
+    mappings = body.get("mappings", [])
+
+    mapped_data = {}
+    for m in mappings:
+        source = m.get("source_field", "")
+        target = m.get("target_field", "")
+        if source and target:
+            if target not in mapped_data:
+                mapped_data[target] = []
+            mapped_data[target].append(source)
+
+    rows = []
+    for m in mappings:
+        rows.append({
+            "Source Field": m.get("source_field", ""),
+            "Target Field": m.get("target_field", ""),
+            "Source Type": m.get("source_type", ""),
+            "Target Type": m.get("target_type", ""),
+            "Confidence": m.get("confidence", 0),
+            "Method": m.get("method", ""),
+        })
+
+    df = pd.DataFrame(rows)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Mapped COA')
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="mapped_coa_{project_id}.xlsx"'
+        }
+    )
+
+
+# ============================================================================
 # EXISTING API ROUTES (Legacy COA Mapping)
 # ============================================================================
 

@@ -1,4 +1,4 @@
-/specs/refactoring/refactoring-specification.md
+/specs
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/inspectionProfiles/Project_Default.xml
 /.idea/.gitignore
@@ -6,9 +6,6 @@
 /.idea/misc.xml
 /.idea/modules.xml
 /.idea/vcs.xml
-/specs/refactoring/tasks.md
-/specs/refactoring/worktree.config.sh
-/specs/raulph-worktree.sh
 /backend/.idea/inspectionProfiles/profiles_settings.xml
 /backend/.idea/inspectionProfiles/Project_Default.xml
 /backend/.idea/.gitignore
