@@ -3,6 +3,8 @@ services:
     build:
       context: ./frontend
       dockerfile: services/frontend/Dockerfile
+      args:
+        BASE_URL: /test
     expose:
       - "80"
     depends_on:
