@@ -1,0 +1,26 @@
+# .github/workflows/deploy-backend.yml
+# Copy this file to: COA_Mapping_backend_V0/.github/workflows/deploy-backend.yml
+
+name: Deploy Backend
+
+on:
+  push:
+    branches: [feat/project-crud-endpoints]
+    paths:
+      - 'services/api-service/**'
+
+jobs:
+  deploy:
+    name: Deploy Backend to Production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 209.38.122.199
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/coa-migration
+            ./deploy.sh backend
