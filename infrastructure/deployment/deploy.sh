@@ -2,42 +2,75 @@
 set -euo pipefail
 
 # =============================================================================
-# COA Migration — Deployment Script
-# Run on the server to pull latest code and rebuild
-# Usage: ./deploy.sh [frontend|backend|all]
+# COA Migration — Multi-Environment Deployment Script
+# Usage: ./deploy.sh <environment> [frontend|backend|all]
+#
+# Examples:
+#   ./deploy.sh production all
+#   ./deploy.sh staging frontend
+#   ./deploy.sh testing backend
 # =============================================================================
 
 APP_DIR=/opt/coa-migration
-COMPONENT=${1:-all}
+ENV=${1:?"Usage: ./deploy.sh <testing|staging|production> [frontend|backend|all]"}
+COMPONENT=${2:-all}
 
-cd ${APP_DIR}
+# --- Environment config ---
+case ${ENV} in
+    testing)
+        FE_BRANCH="develop"
+        BE_BRANCH="develop"
+        COMPOSE_FILE="docker-compose.testing.yml"
+        PROJECT_NAME="coa-testing"
+        ;;
+    staging)
+        FE_BRANCH="staging"
+        BE_BRANCH="staging"
+        COMPOSE_FILE="docker-compose.staging.yml"
+        PROJECT_NAME="coa-staging"
+        ;;
+    production)
+        FE_BRANCH="main"
+        BE_BRANCH="feat/project-crud-endpoints"
+        COMPOSE_FILE="docker-compose.prod.yml"
+        PROJECT_NAME="coa-prod"
+        ;;
+    *)
+        echo "Unknown environment: ${ENV}"
+        echo "Usage: ./deploy.sh <testing|staging|production> [frontend|backend|all]"
+        exit 1
+        ;;
+esac
 
-echo "=== COA Migration Deploy — $(date) ==="
+ENV_DIR=${APP_DIR}/environments/${ENV}
+cd ${ENV_DIR}
+
+echo "=== COA Deploy [${ENV}] — $(date) ==="
 
 deploy_frontend() {
-    echo "[Frontend] Pulling latest from main..."
-    cd ${APP_DIR}/frontend
+    echo "[${ENV}/Frontend] Pulling latest from ${FE_BRANCH}..."
+    cd ${ENV_DIR}/frontend
     git fetch origin
-    git reset --hard origin/main
-    cd ${APP_DIR}
+    git reset --hard origin/${FE_BRANCH}
+    cd ${ENV_DIR}
 
-    echo "[Frontend] Rebuilding container..."
-    docker compose build --no-cache frontend
-    docker compose up -d frontend
-    echo "[Frontend] Deployed successfully."
+    echo "[${ENV}/Frontend] Rebuilding..."
+    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} build --no-cache frontend
+    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} up -d frontend
+    echo "[${ENV}/Frontend] Done."
 }
 
 deploy_backend() {
-    echo "[Backend] Pulling latest from feat/project-crud-endpoints..."
-    cd ${APP_DIR}/backend
+    echo "[${ENV}/Backend] Pulling latest from ${BE_BRANCH}..."
+    cd ${ENV_DIR}/backend
     git fetch origin
-    git reset --hard origin/feat/project-crud-endpoints
-    cd ${APP_DIR}
+    git reset --hard origin/${BE_BRANCH}
+    cd ${ENV_DIR}
 
-    echo "[Backend] Rebuilding container..."
-    docker compose build --no-cache api-service
-    docker compose up -d api-service
-    echo "[Backend] Deployed successfully."
+    echo "[${ENV}/Backend] Rebuilding..."
+    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} build --no-cache api-service
+    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} up -d api-service
+    echo "[${ENV}/Backend] Done."
 }
 
 case ${COMPONENT} in
@@ -50,19 +83,17 @@ case ${COMPONENT} in
     all)
         deploy_frontend
         deploy_backend
-        # Restart nginx to pick up any changes
-        docker compose restart nginx
         ;;
     *)
-        echo "Usage: ./deploy.sh [frontend|backend|all]"
+        echo "Usage: ./deploy.sh <testing|staging|production> [frontend|backend|all]"
         exit 1
         ;;
 esac
 
-# Show status
+# Restart gateway nginx
+echo "[Gateway] Restarting nginx..."
+docker restart coa-gateway-nginx 2>/dev/null || true
+
 echo ""
-echo "=== Container Status ==="
-docker compose ps
-echo ""
-echo "=== Recent Logs ==="
-docker compose logs --tail=20
+echo "=== [${ENV}] Container Status ==="
+docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} ps

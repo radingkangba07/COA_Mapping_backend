@@ -10,7 +10,7 @@ services:
         condition: service_healthy
     restart: always
     networks:
-      - coa-prod
+      - coa-testing
 
   api-service:
     build:
@@ -19,7 +19,7 @@ services:
     expose:
       - "8001"
     env_file:
-      - .env.production
+      - .env.testing
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,14 +33,14 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - coa-prod
+      - coa-testing
 
   postgres:
     image: postgres:15-alpine
     env_file:
-      - .env.production
+      - .env.testing
     volumes:
-      - prod_postgres_data:/var/lib/postgresql/data
+      - testing_postgres_data:/var/lib/postgresql/data
     expose:
       - "5432"
     restart: always
@@ -50,14 +50,14 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - coa-prod
+      - coa-testing
 
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
     env_file:
-      - .env.production
+      - .env.testing
     volumes:
-      - prod_rabbitmq_data:/var/lib/rabbitmq
+      - testing_rabbitmq_data:/var/lib/rabbitmq
     expose:
       - "5672"
     restart: always
@@ -67,12 +67,12 @@ services:
       timeout: 10s
       retries: 3
     networks:
-      - coa-prod
+      - coa-testing
 
 volumes:
-  prod_postgres_data:
-  prod_rabbitmq_data:
+  testing_postgres_data:
+  testing_rabbitmq_data:
 
 networks:
-  coa-prod:
+  coa-testing:
     driver: bridge

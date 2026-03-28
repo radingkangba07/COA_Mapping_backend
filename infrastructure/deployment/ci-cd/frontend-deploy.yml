@@ -1,21 +1,35 @@
 # .github/workflows/deploy-frontend.yml
-# Copy this file to: COA_Mapping_frontend_V0/.github/workflows/deploy-frontend.yml
+# Copy to: COA_Mapping_frontend_V0/.github/workflows/deploy-frontend.yml
 
 name: Deploy Frontend
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - staging
+      - develop
     paths:
       - 'frontend/**'
       - 'services/frontend/**'
 
 jobs:
   deploy:
-    name: Deploy Frontend to Production
+    name: Deploy Frontend
     runs-on: ubuntu-latest
 
     steps:
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_name }}" = "staging" ]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_name }}" = "develop" ]; then
+            echo "environment=testing" >> $GITHUB_OUTPUT
+          fi
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -24,4 +38,4 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /opt/coa-migration
-            ./deploy.sh frontend
+            ./deploy.sh ${{ steps.env.outputs.environment }} frontend
