@@ -27,7 +27,8 @@ class ProjectService:
         company_id: str,
         created_by: str,
         description: Optional[str] = None,
-        company_name: Optional[str] = None
+        company_name: Optional[str] = None,
+        current_step: int = 0
     ) -> Dict[str, Any]:
         """
         Create a new project with initial access for creator.
@@ -44,7 +45,8 @@ class ProjectService:
             target_erp=target_erp,
             company_id=company_id,
             created_by=created_by,
-            description=description
+            description=description,
+            current_step=current_step
         )
         
         # Grant admin access to creator
@@ -74,9 +76,14 @@ class ProjectService:
             raise PermissionError("Insufficient permissions")
         
         # Filter allowed fields
-        allowed_fields = ["name", "description", "status"]
+        allowed_fields = ["name", "description", "status", "current_step"]
         filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields}
-        
+
+        if "current_step" in filtered_updates:
+            val = filtered_updates["current_step"]
+            if not isinstance(val, int) or not (0 <= val <= 5):
+                raise ValueError("current_step must be an integer between 0 and 5")
+
         if not filtered_updates:
             project = await self.project_repo.find_by_id(project_id)
             return {"success": True, "project": project}
