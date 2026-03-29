@@ -36,7 +36,8 @@ class ProjectRepository(BaseRepository):
         company_id: str = "",
         created_by: str = "",
         description: Optional[str] = None,
-        status: str = "draft"
+        status: str = "draft",
+        current_step: int = 0
     ) -> Dict[str, Any]:
         """Create a new project."""
         now = datetime.now(timezone.utc).isoformat()
@@ -47,6 +48,7 @@ class ProjectRepository(BaseRepository):
             "source_erp": source_erp,
             "target_erp": target_erp,
             "status": status,
+            "current_step": current_step,
             "description": description or "",
             "created_by": created_by,
             "created_at": now,
