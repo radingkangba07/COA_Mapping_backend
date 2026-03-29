@@ -263,6 +263,7 @@ async def get_project_detail(
         result = await services["dashboard"].get_project_detail(project_id, user_id)
         if not result:
             raise HTTPException(status_code=404, detail="Project not found")
+        result.setdefault("current_step", 0)
         return result
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -410,6 +411,9 @@ async def list_projects(
         limit=limit
     )
 
+    for project in projects:
+        project.setdefault("current_step", 0)
+
     return {"projects": projects, "total": total}
 
 
@@ -434,6 +438,8 @@ async def get_project(
     project = await project_repo.find_by_id(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    project.setdefault("current_step", 0)
 
     return project
 
