@@ -284,7 +284,8 @@ async def create_project(
         company_id=data.company_id,
         created_by=user_id,
         description=data.description,
-        company_name=data.company_name
+        company_name=data.company_name,
+        current_step=data.current_step
     )
 
 
@@ -453,7 +454,8 @@ async def create_project_direct(
         company_id=data.company_id,
         created_by=user_id,
         description=data.description,
-        company_name=data.company_name
+        company_name=data.company_name,
+        current_step=data.current_step
     )
 
     return result["project"]
