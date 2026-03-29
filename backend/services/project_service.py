@@ -86,12 +86,14 @@ class ProjectService:
 
         if not filtered_updates:
             project = await self.project_repo.find_by_id(project_id)
+            project["current_step"] = project.get("current_step", 0)
             return {"success": True, "project": project}
-        
+
         # Update
         await self.project_repo.update_project(project_id, filtered_updates, user_id)
         project = await self.project_repo.find_by_id(project_id)
-        
+        project["current_step"] = project.get("current_step", 0)
+
         return {"success": True, "project": project}
     
     async def save_mappings(
