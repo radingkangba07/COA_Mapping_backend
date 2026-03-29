@@ -23,7 +23,7 @@ from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import logging
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any
 import uuid
 from datetime import datetime, timezone
@@ -196,6 +196,7 @@ class ProjectCreate(BaseModel):
     company_id: str
     company_name: Optional[str] = None
     description: Optional[str] = None
+    current_step: int = Field(0, ge=0, le=5)
 
 
 class ProjectAccessGrant(BaseModel):
