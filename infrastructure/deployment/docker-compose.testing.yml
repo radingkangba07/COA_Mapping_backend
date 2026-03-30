@@ -17,16 +17,14 @@ services:
 
   api-service:
     build:
-      context: ./backend/services/api-service
-      dockerfile: Dockerfile
+      context: ./backend
+      dockerfile: backend/Dockerfile
     expose:
       - "8001"
     env_file:
       - .env.testing
     depends_on:
-      postgres:
-        condition: service_healthy
-      rabbitmq:
+      mongo:
         condition: service_healthy
     restart: always
     healthcheck:
@@ -38,43 +36,23 @@ services:
     networks:
       - coa-testing
 
-  postgres:
-    image: postgres:15-alpine
-    env_file:
-      - .env.testing
+  mongo:
+    image: mongo:7-jammy
     volumes:
-      - testing_postgres_data:/var/lib/postgresql/data
+      - testing_mongo_data:/data/db
     expose:
-      - "5432"
+      - "27017"
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - coa-testing
 
-  rabbitmq:
-    image: rabbitmq:3.12-management-alpine
-    env_file:
-      - .env.testing
-    volumes:
-      - testing_rabbitmq_data:/var/lib/rabbitmq
-    expose:
-      - "5672"
-    restart: always
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - coa-testing
-
 volumes:
-  testing_postgres_data:
-  testing_rabbitmq_data:
+  testing_mongo_data:
 
 networks:
   coa-testing:
