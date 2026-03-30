@@ -3,6 +3,9 @@ services:
     build:
       context: ./frontend
       dockerfile: services/frontend/Dockerfile
+      args:
+        API_BASE_URL: ""
+        APP_ENV: production
     expose:
       - "80"
     depends_on:

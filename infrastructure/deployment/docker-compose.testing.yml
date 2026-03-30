@@ -4,7 +4,8 @@ services:
       context: ./frontend
       dockerfile: services/frontend/Dockerfile
       args:
-        BASE_URL: /test
+        API_BASE_URL: /test
+        APP_ENV: testing
     expose:
       - "80"
     depends_on:

@@ -57,8 +57,8 @@ deploy_frontend() {
     git reset --hard origin/${FE_BRANCH}
     cd ${ENV_DIR}
 
-    echo "[${ENV}/Frontend] Rebuilding (BASE_URL=${FE_BASE_URL})..."
-    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} build --no-cache --build-arg BASE_URL="${FE_BASE_URL}" frontend
+    echo "[${ENV}/Frontend] Rebuilding (API_BASE_URL=${FE_BASE_URL})..."
+    docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} build --no-cache frontend
     docker compose -p ${PROJECT_NAME} -f ${COMPOSE_FILE} up -d frontend
     echo "[${ENV}/Frontend] Done."
 }
