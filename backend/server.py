@@ -523,11 +523,89 @@ async def delete_project(
 @api_router.post("/files/upload")
 async def upload_file_to_project(
     file: UploadFile = File(...),
-    source_erp: str = "unknown",
-    target_erp: str = "unknown"
+    project_id: str = Query(..., description="Project to associate the file with"),
+    file_type: str = Query(..., description="File type", pattern="^(sourcecoa|targetcoa|typemapping)$"),
+    source_erp: str = Query(default="unknown"),
+    target_erp: str = Query(default="unknown"),
+    authorization: Optional[str] = Header(None)
 ):
-    """Upload and parse a file (frontend-facing alias for /upload)."""
-    return await upload_file(file=file, source_erp=source_erp, target_erp=target_erp)
+    """Upload a file, persist it to storage linked to a project, and parse its contents."""
+    user_id = await get_current_user_id(authorization)
+    services = get_services()
+
+    # Verify project access (editor+)
+    if not await services["storage_file"].check_upload_permission(project_id, user_id):
+        raise HTTPException(status_code=403, detail="Insufficient permissions to upload")
+
+    if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
+        raise HTTPException(
+            status_code=400,
+            detail="Only Excel (.xlsx, .xls) and CSV files are supported"
+        )
+
+    try:
+        contents = await file.read()
+
+        # Parse file into DataFrame
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(contents))
+        else:
+            df = pd.read_excel(io.BytesIO(contents))
+        df.columns = df.columns.str.strip()
+
+        # Create in-memory session (for immediate processing)
+        session_id = str(uuid.uuid4())
+        uploaded_data_store[session_id] = df
+        session_store[session_id] = {
+            "id": session_id,
+            "source_erp": source_erp,
+            "target_erp": target_erp,
+            "file_name": file.filename,
+            "source_columns": df.columns.tolist(),
+            "row_count": len(df),
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # Persist to object storage + DB record
+        file_record = None
+        content_type = file.content_type or "application/octet-stream"
+        if init_storage():
+            result = storage_service.upload_file(
+                data=contents,
+                filename=file.filename,
+                content_type=content_type,
+                company_id="default",
+                project_id=project_id,
+                file_type=file_type,
+            )
+            file_record = await services["storage_file"].create_file_record(
+                project_id=project_id,
+                original_filename=file.filename,
+                storage_path=result["path"],
+                file_type=file_type,
+                content_type=content_type,
+                size_bytes=len(contents),
+                company_id="default",
+                uploaded_by=user_id,
+                etag=result.get("etag"),
+            )
+
+        all_data = df.fillna("").to_dict(orient='records')
+
+        return {
+            "session_id": session_id,
+            "file_name": file.filename,
+            "columns": df.columns.tolist(),
+            "row_count": len(df),
+            "sample_data": all_data,
+            "file": file_record,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
 
 @api_router.get("/files/{file_id}")
