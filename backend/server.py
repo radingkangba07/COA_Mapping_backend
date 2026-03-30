@@ -304,6 +304,8 @@ async def update_project(
         return await services["project"].update_project(project_id, user_id, data)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @api_router.post("/dashboard/projects/{project_id}/mappings")
@@ -482,6 +484,8 @@ async def update_project_direct(
         return result["project"]
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @api_router.delete("/projects/{project_id}")
