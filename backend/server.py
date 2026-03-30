@@ -902,6 +902,7 @@ async def get_target_account_types(target_erp: str):
     return {"account_types": types}
 
 
+@api_router.get("/erp-systems/sample-data/{erp_id}")
 @api_router.get("/sample-data/{erp_id}")
 async def get_sample_data(erp_id: str):
     """Get sample COA data for a specific ERP system."""
@@ -918,6 +919,7 @@ async def get_sample_data(erp_id: str):
     }
 
 
+@api_router.get("/erp-systems/sample-data/{erp_id}/download")
 @api_router.get("/sample-data/{erp_id}/download")
 async def download_sample_data(erp_id: str):
     """Download sample COA data as Excel file."""
