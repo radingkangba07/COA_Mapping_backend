@@ -567,9 +567,10 @@ async def upload_file_to_project(
             "created_at": datetime.now(timezone.utc).isoformat()
         }
 
-        # Persist to object storage + DB record
-        file_record = None
+        # Persist to object storage (if available) + DB record
         content_type = file.content_type or "application/octet-stream"
+        storage_path = None
+        etag = None
         if init_storage():
             result = storage_service.upload_file(
                 data=contents,
@@ -579,17 +580,21 @@ async def upload_file_to_project(
                 project_id=project_id,
                 file_type=file_type,
             )
-            file_record = await services["storage_file"].create_file_record(
-                project_id=project_id,
-                original_filename=file.filename,
-                storage_path=result["path"],
-                file_type=file_type,
-                content_type=content_type,
-                size_bytes=len(contents),
-                company_id="default",
-                uploaded_by=user_id,
-                etag=result.get("etag"),
-            )
+            storage_path = result["path"]
+            etag = result.get("etag")
+
+        # Always create DB record so the file is linked to the project
+        file_record = await services["storage_file"].create_file_record(
+            project_id=project_id,
+            original_filename=file.filename,
+            storage_path=storage_path or f"pending/{project_id}/{uuid.uuid4()}/{file.filename}",
+            file_type=file_type,
+            content_type=content_type,
+            size_bytes=len(contents),
+            company_id="default",
+            uploaded_by=user_id,
+            etag=etag,
+        )
 
         all_data = df.fillna("").to_dict(orient='records')
 
@@ -615,6 +620,53 @@ async def get_file(
 ):
     """Get file metadata (frontend-facing alias for /storage/files/{file_id})."""
     return await get_file_metadata(file_id=file_id, authorization=authorization)
+
+
+@api_router.get("/files/{file_id}/data")
+async def get_file_data(
+    file_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """Download a file from storage, parse it, and return the row data."""
+    user_id = await get_current_user_id(authorization)
+    services = get_services()
+
+    try:
+        file_meta = await services["storage_file"].get_file(file_id, user_id)
+        if not file_meta:
+            raise HTTPException(status_code=404, detail="File not found")
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    if not init_storage():
+        raise HTTPException(status_code=503, detail="Storage service unavailable")
+
+    try:
+        content, _ = storage_service.download_file(file_meta["storage_path"])
+        filename = file_meta["original_filename"]
+
+        if filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        elif filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(content))
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format")
+
+        df.columns = df.columns.str.strip()
+        rows = df.fillna("").to_dict(orient='records')
+
+        return {
+            "file_id": file_id,
+            "file_name": filename,
+            "columns": df.columns.tolist(),
+            "row_count": len(df),
+            "sample_data": rows,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error parsing file data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error parsing file: {str(e)}")
 
 
 @api_router.get("/files/{file_id}/download")
@@ -652,6 +704,110 @@ async def delete_project_file(
 # ============================================================================
 # MAPPING ENDPOINTS (Frontend-facing aliases)
 # ============================================================================
+
+@api_router.get("/mappings/project/{project_id}")
+async def get_project_mappings(
+    project_id: str,
+    status: Optional[str] = Query(default=None),
+    authorization: Optional[str] = Header(None)
+):
+    """Get all mappings for a project."""
+    user_id = await get_current_user_id(authorization)
+    services = get_services()
+
+    # Verify project access
+    access = await services["project"].access_repo.find_user_access(user_id, project_id)
+    if not access:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    flat_mappings = await services["project"].mapping_repo.find_by_project(project_id, status=status)
+
+    # Group by (source_type, target_type) and remap field names
+    from collections import defaultdict
+    groups: Dict[tuple, list] = defaultdict(list)
+    group_scores: Dict[tuple, list] = defaultdict(list)
+
+    for m in flat_mappings:
+        key = (m.get("source_type", ""), m.get("target_type", ""))
+        score = m.get("confidence_score", 0)
+        groups[key].append({
+            "source_number": m.get("source_account_number", ""),
+            "source_name": m.get("source_account_name", ""),
+            "target_name": m.get("target_account_name", ""),
+            "score": score,
+            "remark": m.get("remark", ""),
+            "status": m.get("status", "pending"),
+        })
+        group_scores[key].append(score)
+
+    result = []
+    for (source_type, target_type), accounts in groups.items():
+        scores = group_scores[(source_type, target_type)]
+        result.append({
+            "source_type": source_type,
+            "target_type": target_type,
+            "confidence": round(sum(scores) / len(scores), 1) if scores else 0,
+            "accounts": accounts,
+        })
+
+    return result
+
+
+@api_router.patch("/mappings/bulk-status")
+async def bulk_update_mapping_status(
+    data: Dict[str, Any],
+    authorization: Optional[str] = Header(None)
+):
+    """Update mapping statuses by score range for a project."""
+    project_id = data.get("project_id")
+    min_score = data.get("min_score", 0)
+    max_score = data.get("max_score", 100)
+    new_status = data.get("status", "confirmed")
+
+    if not project_id:
+        raise HTTPException(status_code=422, detail="project_id is required")
+    if new_status not in ("confirmed", "pending"):
+        raise HTTPException(status_code=422, detail="status must be 'confirmed' or 'pending'")
+
+    user_id = await get_current_user_id(authorization)
+    services = get_services()
+
+    # Verify editor+ access
+    access = await services["project"].access_repo.find_user_access(user_id, project_id)
+    if not access or access["permission"] == "viewer":
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    now = datetime.now(timezone.utc).isoformat()
+    result = await services["project"].mapping_repo.collection.update_many(
+        {
+            "project_id": project_id,
+            "confidence_score": {"$gte": min_score, "$lte": max_score},
+        },
+        {"$set": {"status": new_status, "updated_at": now}}
+    )
+
+    return {
+        "matched": result.matched_count,
+        "modified": result.modified_count,
+        "status": new_status,
+    }
+
+
+@api_router.post("/mappings/bulk")
+async def bulk_save_mappings(
+    project_id: str = Query(..., description="Project to save mappings to"),
+    mappings: List[Dict[str, Any]] = [],
+    authorization: Optional[str] = Header(None)
+):
+    """Bulk save mappings to a project."""
+    user_id = await get_current_user_id(authorization)
+    services = get_services()
+
+    try:
+        return await services["project"].save_mappings(project_id, user_id, mappings)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
 
 @api_router.post("/mappings/hierarchical")
 async def hierarchical_mapping_alias(
