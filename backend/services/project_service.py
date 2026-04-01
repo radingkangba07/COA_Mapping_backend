@@ -76,7 +76,7 @@ class ProjectService:
             raise PermissionError("Insufficient permissions")
         
         # Filter allowed fields
-        allowed_fields = ["name", "description", "status", "current_step"]
+        allowed_fields = ["name", "description", "status", "current_step", "source_erp", "target_erp"]
         filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields}
 
         if "current_step" in filtered_updates:
