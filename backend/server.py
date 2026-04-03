@@ -415,6 +415,7 @@ async def list_projects(
 
     for project in projects:
         project.setdefault("current_step", 0)
+        project["updated_by"] = project.get("last_edited_by")
 
     return {"projects": projects, "total": total}
 
@@ -442,6 +443,7 @@ async def get_project(
         raise HTTPException(status_code=404, detail="Project not found")
 
     project.setdefault("current_step", 0)
+    project["updated_by"] = project.get("last_edited_by")
 
     return project
 

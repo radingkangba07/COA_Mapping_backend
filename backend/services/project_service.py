@@ -56,8 +56,9 @@ class ProjectService:
             permission="admin"
         )
         
+        project["updated_by"] = project.get("last_edited_by")
         return {"success": True, "project": project}
-    
+
     async def update_project(
         self,
         project_id: str,
@@ -87,12 +88,14 @@ class ProjectService:
         if not filtered_updates:
             project = await self.project_repo.find_by_id(project_id)
             project["current_step"] = project.get("current_step", 0)
+            project["updated_by"] = project.get("last_edited_by")
             return {"success": True, "project": project}
 
         # Update
         await self.project_repo.update_project(project_id, filtered_updates, user_id)
         project = await self.project_repo.find_by_id(project_id)
         project["current_step"] = project.get("current_step", 0)
+        project["updated_by"] = project.get("last_edited_by")
 
         return {"success": True, "project": project}
     

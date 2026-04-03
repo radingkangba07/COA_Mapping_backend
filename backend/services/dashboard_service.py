@@ -77,9 +77,10 @@ class DashboardService:
                 "user_permission": user_permissions.get(project_id, "viewer"),
                 "access_list": enriched_access,
                 "mapping_count": mapping_count,
-                "last_edited_by": last_edited_by_name
+                "last_edited_by": last_edited_by_name,
+                "updated_by": last_edited_by_name
             })
-        
+
         # Build companies list
         companies_with_projects = []
         for company_id, proj_list in company_projects.items():
@@ -168,6 +169,7 @@ class DashboardService:
             "mappings": mappings,
             "mapping_count": len(mappings),
             "last_edited_by": last_edited_by_name,
+            "updated_by": last_edited_by_name,
             "created_by_name": created_by_name,
             "mapping_stats": mapping_stats
         }
