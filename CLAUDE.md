@@ -6,34 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Chart of Accounts (COA) Migration Platform — helps organizations migrate their COA between ERP systems (SAP, Oracle NetSuite, Microsoft Dynamics, QuickBooks, Sage, Xero). Provides fuzzy matching, hierarchical mapping, file management, and multi-tenant project workflows.
 
-## Current State (Legacy)
+## Current State
 
-Two parallel backend implementations exist in the repo. Both are being replaced by the `src/` refactor described below.
-
-### backend/ (MongoDB monolith, previously active)
-```bash
-cd backend && source venv/bin/activate
-uvicorn server:app --host 0.0.0.0 --port 8001 --reload
-# Requires MongoDB at mongodb://localhost:27017 (see backend/.env)
-```
-- Single `server.py` with all routes + Pydantic models + in-memory session stores
-- Services → Repositories → MongoDB (Motor async driver)
-- Imports `erp_service`, `matching_service`, `storage_service` from `services/api-service/` via sys.path
-
-### services/api-service/ (PostgreSQL, partially built)
-- SQLAlchemy models, Pydantic schemas, routers — but not deployed as primary backend
-- Contains the ERP definitions, fuzzy matching logic, and storage provider code that `backend/` imports
-
----
-
-## Target Architecture (Refactor)
-
-Full specification: `specs/refactoring/refactoring-specification.md` — covers architecture, DB schema, API endpoints, NATS integration, module specs, and implementation phases.
-Tasks: `specs/refactoring/tasks.md` — 92 tasks across 9 phases.
-Worktree config: `specs/refactoring/worktree.config.sh` — multi-agent orchestration config.
+The refactored modular monolith in `src/` is the **active codebase**. Legacy code (MongoDB monolith) has been removed.
 
 ### Stack
-FastAPI, PostgreSQL (asyncpg), Alembic, Pydantic v2, NATS JetStream, boto3 (S3-compatible)
+FastAPI, PostgreSQL (asyncpg), Alembic, Pydantic v2, NATS JetStream, boto3 (DigitalOcean Spaces)
 
 ### Layout
 ```
@@ -51,7 +29,7 @@ src/
 │   ├── auth/                  # JWT auth (register, login, refresh)
 │   ├── projects/              # Companies, projects, access control, dashboard
 │   ├── mappings/              # Account mappings, fuzzy matching (RapidFuzz)
-│   ├── storage/               # File upload/download via S3
+│   ├── storage/               # File upload/download via DigitalOcean Spaces
 │   ├── jobs/                  # Async job queue via NATS JetStream
 │   └── erp/                   # ERP definitions from YAML config
 ├── config/
@@ -108,8 +86,8 @@ docker-compose -f src/docker-compose.yml up -d
 - **ERP config in YAML** — adding an ERP requires zero code changes
 - **NATS graceful degradation** — if NATS unavailable, jobs run synchronously in-process
 - **Mapping bulk save is destructive** — DELETE + INSERT in a single transaction
-- **Soft delete for files** — `is_deleted` flag in DB, hard delete from S3
-- **No parsed_data in DB** — large parsed file content stored as S3 artifact, not in PostgreSQL
+- **Soft delete for files** — `is_deleted` flag in DB, hard delete from DigitalOcean Spaces
+- **No parsed_data in DB** — large parsed file content stored as DO Spaces artifact, not in PostgreSQL
 
 ### CI (GitHub Actions)
 

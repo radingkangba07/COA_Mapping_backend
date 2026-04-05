@@ -1,0 +1,326 @@
+import logging
+from typing import Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import JSONResponse
+
+from src.core.exceptions import AppError
+from src.modules.auth.dependencies import get_current_user
+from src.modules.auth.models import User
+from src.modules.projects.dependencies import get_project_service, require_project_access
+from src.modules.projects.schemas import (
+    AccessGrant,
+    AccessResponse,
+    CompanyCreate,
+    CompanyResponse,
+    DashboardResponse,
+    ProjectCreate,
+    ProjectListResponse,
+    ProjectResponse,
+    ProjectUpdate,
+)
+from src.modules.projects.service import ProjectService
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/v1", tags=["projects"])
+
+
+# --- Projects ---
+
+
+@router.post("/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_project(
+    data: ProjectCreate,
+    user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        return await service.create_project(data, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to create project '%s'", data.name)
+        return JSONResponse(status_code=500, content={"detail": "Failed to create project"})
+
+
+@router.get("/projects", response_model=ProjectListResponse)
+async def list_projects(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        projects = await service.list_projects(user, skip=skip, limit=limit)
+        return ProjectListResponse(projects=projects, total=len(projects))
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to list projects")
+        return JSONResponse(status_code=500, content={"detail": "Failed to list projects"})
+
+
+@router.get("/projects/{project_id}", response_model=ProjectResponse)
+async def get_project(
+    project_id: UUID,
+    _access=Depends(require_project_access("viewer")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        return await service.get_project(project_id)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to get project %s", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to get project"})
+
+
+@router.patch("/projects/{project_id}", response_model=ProjectResponse)
+async def update_project(
+    project_id: UUID,
+    data: ProjectUpdate,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("editor")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        return await service.update_project(project_id, data, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to update project %s", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to update project"})
+
+
+@router.delete("/projects/{project_id}")
+async def delete_project(
+    project_id: UUID,
+    _access=Depends(require_project_access("admin")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        await service.delete_project(project_id)
+        return {"status": "deleted"}
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to delete project %s", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to delete project"})
+
+
+# --- Access Control ---
+
+
+@router.post("/projects/{project_id}/access")
+async def grant_access(
+    project_id: UUID,
+    data: AccessGrant,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("approver")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        await service.grant_access(project_id, data.user_id, data.permission, user)
+        return {"success": True, "message": f"Access granted to {data.user_id}"}
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to grant access on project %s", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to grant access"})
+
+
+@router.delete("/projects/{project_id}/access/{user_id}")
+async def revoke_access(
+    project_id: UUID,
+    user_id: UUID,
+    _access=Depends(require_project_access("approver")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        await service.revoke_access(project_id, user_id)
+        return {"success": True, "message": f"Access revoked from {user_id}"}
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to revoke access on project %s", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to revoke access"})
+
+
+@router.get("/projects/{project_id}/access", response_model=list[AccessResponse])
+async def list_access(
+    project_id: UUID,
+    _access=Depends(require_project_access("viewer")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        rows = await service.get_access_list(project_id)
+        return [AccessResponse(**row) for row in rows]
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to list access for project %s", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to list access"})
+
+
+# --- Companies ---
+
+
+@router.post("/companies", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED)
+async def create_company(
+    data: CompanyCreate,
+    user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        return await service.create_company(slug=data.slug, name=data.name, description=data.description)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to create company '%s'", data.slug)
+        return JSONResponse(status_code=500, content={"detail": "Failed to create company"})
+
+
+@router.get("/companies", response_model=list[CompanyResponse])
+async def list_companies(
+    user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        return await service.list_companies(user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to list companies")
+        return JSONResponse(status_code=500, content={"detail": "Failed to list companies"})
+
+
+# --- Dashboard ---
+
+
+@router.get("/dashboard/companies", response_model=DashboardResponse)
+async def dashboard_companies(
+    user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        companies = await service.get_dashboard(user)
+        total_projects = sum(len(c.projects) for c in companies)
+        return DashboardResponse(companies=companies, total_projects=total_projects)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to load dashboard")
+        return JSONResponse(status_code=500, content={"detail": "Failed to load dashboard"})
+
+
+@router.get("/dashboard/projects/{project_id}")
+async def dashboard_project(
+    project_id: UUID,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("viewer")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        return await service.get_project_detail(project_id, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to load project detail %s", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to load project detail"})
+
+
+# --- Dashboard CRUD aliases (legacy frontend uses /dashboard/projects/* for writes) ---
+
+
+@router.post("/dashboard/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED,
+             include_in_schema=False)
+async def dashboard_create_project(
+    data: ProjectCreate,
+    user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        return await service.create_project(data, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to create project via dashboard")
+        return JSONResponse(status_code=500, content={"detail": "Failed to create project"})
+
+
+@router.patch("/dashboard/projects/{project_id}", include_in_schema=False)
+async def dashboard_update_project(
+    project_id: UUID,
+    data: dict[str, Any],
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("editor")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        update = ProjectUpdate(**{k: v for k, v in data.items() if k in ProjectUpdate.model_fields})
+        return await service.update_project(project_id, update, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to update project %s via dashboard", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to update project"})
+
+
+@router.post("/dashboard/projects/{project_id}/mappings", include_in_schema=False)
+async def dashboard_save_mappings(
+    project_id: UUID,
+    mappings: list[dict[str, Any]],
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("editor")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        from src.modules.mappings.dependencies import get_mapping_service
+        from src.modules.mappings.schemas import MappingCreate
+
+        mapping_service = get_mapping_service()
+        mapping_creates = [MappingCreate(**m) for m in mappings]
+        return await mapping_service.bulk_save(project_id, mapping_creates)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to save mappings for project %s via dashboard", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to save mappings"})
+
+
+@router.post("/dashboard/projects/{project_id}/access", include_in_schema=False)
+async def dashboard_grant_access(
+    project_id: UUID,
+    data: AccessGrant,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("approver")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        await service.grant_access(project_id, data.user_id, data.permission, user)
+        return {"success": True, "message": f"Access granted to {data.user_id}"}
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to grant access on project %s via dashboard", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to grant access"})
+
+
+@router.delete("/dashboard/projects/{project_id}/access/{target_user_id}", include_in_schema=False)
+async def dashboard_revoke_access(
+    project_id: UUID,
+    target_user_id: UUID,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("approver")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        await service.revoke_access(project_id, target_user_id)
+        return {"success": True, "message": f"Access revoked from {target_user_id}"}
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to revoke access on project %s via dashboard", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to revoke access"})

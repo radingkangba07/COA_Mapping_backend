@@ -1,0 +1,17 @@
+sap:
+  name: SAP
+
+oracle_netsuite:
+  name: Oracle NetSuite
+
+microsoft_dynamics:
+  name: Microsoft Dynamics 365
+
+quickbooks:
+  name: QuickBooks
+
+sage:
+  name: Sage Intacct
+
+xero:
+  name: Xero

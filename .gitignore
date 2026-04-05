@@ -1,15 +1,31 @@
+# Environment
+.env
+.env.testing
+.env.staging
+.env.production
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.iml
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Screenshots
+screenshots/
+
+# Specs
 /specs
-/.idea/inspectionProfiles/profiles_settings.xml
-/.idea/inspectionProfiles/Project_Default.xml
-/.idea/.gitignore
-/.idea/COA_Mapping_backend_V0.iml
-/.idea/misc.xml
-/.idea/modules.xml
-/.idea/vcs.xml
-/backend/.idea/inspectionProfiles/profiles_settings.xml
-/backend/.idea/inspectionProfiles/Project_Default.xml
-/backend/.idea/.gitignore
-/backend/.idea/backend.iml
-/backend/.idea/misc.xml
-/backend/.idea/modules.xml
-/backend/.idea/vcs.xml
