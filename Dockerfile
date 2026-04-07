@@ -10,6 +10,7 @@ RUN uv sync --frozen --no-dev
 
 # Copy application code
 COPY src/ ./src/
+COPY alembic.ini ./alembic.ini
 
 EXPOSE 8001
 
