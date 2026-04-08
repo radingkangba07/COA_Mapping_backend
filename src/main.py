@@ -79,7 +79,9 @@ app.include_router(legacy_erp_router)
 app.include_router(legacy_mappings_router)
 
 
-# Health check
+# Health check — registered at both the prefixed API path and an unprefixed
+# `/health` so container healthchecks work regardless of root_path mounting.
+@app.get("/health", include_in_schema=False)
 @app.get("/api/v1/health")
 async def health_check() -> dict:
     status_val = "healthy"
