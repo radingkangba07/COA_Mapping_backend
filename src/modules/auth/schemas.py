@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class LoginRequest(BaseModel):
@@ -37,3 +37,14 @@ class LoginResponse(BaseModel):
     user: UserResponse
     token: str
     is_new_user: bool
+
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: EmailStr
+    org_name: str
+
+
+class RegisterResponse(BaseModel):
+    user_id: uuid.UUID
+    message: str

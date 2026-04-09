@@ -59,3 +59,62 @@ async def test_logout(test_client: AsyncClient):
     resp = await test_client.post("/api/v1/auth/logout")
     assert resp.status_code == 200
     assert resp.json()["success"] is True
+
+
+# --- Registration tests ---
+
+
+@pytest.mark.asyncio
+async def test_register_success(test_client: AsyncClient):
+    resp = await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": "Test User", "email": "test@example.com", "org_name": "Test Org"},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert "user_id" in data
+    assert data["message"] == "Verification email sent"
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_email(test_client: AsyncClient):
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": "User A", "email": "dup@example.com", "org_name": "Org A"},
+    )
+    resp = await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": "User B", "email": "dup@example.com", "org_name": "Org B"},
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_org(test_client: AsyncClient):
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": "User A", "email": "u1@example.com", "org_name": "Same Org"},
+    )
+    resp = await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": "User B", "email": "u2@example.com", "org_name": "Same Org"},
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_register_missing_fields(test_client: AsyncClient):
+    resp = await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": "Test"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_invalid_email(test_client: AsyncClient):
+    resp = await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": "User", "email": "not-an-email", "org_name": "Org"},
+    )
+    assert resp.status_code == 422

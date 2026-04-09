@@ -1,17 +1,22 @@
 import logging
+from datetime import timedelta
 
-from src.core.exceptions import ForbiddenError
+from src.core.exceptions import ConflictError, ForbiddenError
+from src.core.security import create_access_token
 from src.modules.auth.models import User
-from src.modules.auth.protocols import UserRepositoryProtocol
+from src.modules.auth.protocols import OrganizationRepositoryProtocol, UserRepositoryProtocol
 from src.modules.auth.schemas import LoginResponse, UserResponse
 
 logger = logging.getLogger(__name__)
 
 
 class AuthService:
-    def __init__(self, user_repo: UserRepositoryProtocol, session=None):
+    def __init__(
+        self, user_repo: UserRepositoryProtocol, session=None, org_repo: OrganizationRepositoryProtocol | None = None
+    ):
         self.user_repo = user_repo
         self.session = session
+        self.org_repo = org_repo
 
     async def login(self, user_id: str) -> LoginResponse:
         """Login with user ID (mock authentication). Auto-creates user if not exists."""
@@ -43,6 +48,39 @@ class AuthService:
         except Exception:
             logger.exception("Login failed for user_id='%s'", user_id)
             raise
+
+    async def register(self, name: str, email: str, org_name: str) -> dict:
+        """Register a new user with an organization."""
+        existing_user = await self.user_repo.get_by_email(email)
+        if existing_user:
+            logger.warning("Registration failed: duplicate email '%s'", email)
+            raise ConflictError("Email already registered")
+
+        existing_org = await self.org_repo.get_by_name(org_name)
+        if existing_org:
+            logger.warning("Registration failed: duplicate org name '%s'", org_name)
+            raise ConflictError("Organization name already taken")
+
+        user = await self.user_repo.create(
+            user_id=email.split("@")[0],
+            email=email,
+            name=name,
+        )
+
+        org = await self.org_repo.create(name=org_name)
+        await self.org_repo.create_member(user_id=user.id, org_id=org.id, role="owner")
+
+        # Generate verification token (JWT, 15min expiry)
+        # TODO: Send verification email (SCRUM-16)
+        create_access_token(
+            data={"sub": str(user.id), "purpose": "email_verification"},
+            expires_delta=timedelta(minutes=15),
+        )
+
+        await self.session.commit()
+
+        logger.info("User registered: email='%s', org='%s'", email, org_name)
+        return {"user_id": user.id, "message": "Verification email sent"}
 
     async def get_current_user(self, token: str) -> User:
         """Extract user from mock token."""
