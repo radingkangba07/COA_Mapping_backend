@@ -43,9 +43,7 @@ async def connect_nats(url: str, stream_name: str = "COA_JOBS") -> None:
                         name=stream_name,
                         subjects=["jobs.mapping.*", "coa.results.*"],
                         retention=RetentionPolicy.WORK_QUEUE,
-                        max_deliver=3,
-                        ack_wait=60,
-                        max_age=86400_000_000_000,  # 24h in nanoseconds
+                        max_age=86400,  # 24h in seconds
                     )
                 )
             logger.info("Connected to NATS at %s (stream=%s)", url, stream_name)
