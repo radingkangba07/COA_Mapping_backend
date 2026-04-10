@@ -11,6 +11,7 @@ from src.core.database import close_db, init_db
 from src.core.exceptions import AppError
 from src.core.logging import setup_logging
 from src.core.nats_client import close_nats, connect_nats, is_nats_available
+from src.core.resend_client import close_resend, init_resend, is_resend_available
 from src.core.s3_client import close_s3_client, get_s3_client, init_s3_client
 from src.modules.auth.routes import router as auth_router
 from src.modules.erp.routes import legacy_erp_router
@@ -33,8 +34,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     await connect_nats(settings.nats_url, settings.nats_stream_name)
     init_s3_client()
+    init_resend()
     yield
     logger.info("Shutting down COA Migration API")
+    close_resend()
     await close_nats()
     close_s3_client()
     await close_db()
@@ -110,6 +113,8 @@ async def health_check() -> dict:
         db_status = "disconnected"
         status_val = "degraded"
 
+    email_status = "available" if is_resend_available() else "disabled"
+
     return {
         "status": status_val,
         "service": "coa-migration-api",
@@ -117,4 +122,5 @@ async def health_check() -> dict:
         "database": db_status,
         "nats": nats_status,
         "storage": storage_status,
+        "email": email_status,
     }

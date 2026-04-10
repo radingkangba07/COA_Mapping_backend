@@ -1,7 +1,11 @@
 """Tests for auth routes — mock authentication."""
 
+from datetime import timedelta
+
 import pytest
 from httpx import AsyncClient
+
+from src.core.security import create_access_token
 
 
 @pytest.mark.asyncio
@@ -117,4 +121,31 @@ async def test_register_invalid_email(test_client: AsyncClient):
         "/api/v1/auth/register",
         json={"name": "User", "email": "not-an-email", "org_name": "Org"},
     )
+    assert resp.status_code == 422
+
+
+# --- Email verification tests ---
+
+
+@pytest.mark.asyncio
+async def test_verify_email_invalid_token(test_client: AsyncClient):
+    resp = await test_client.get("/api/v1/auth/verify?token=invalid-garbage")
+    assert resp.status_code == 200
+    assert "Verification Failed" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_verify_email_wrong_purpose(test_client: AsyncClient):
+    token = create_access_token(
+        data={"sub": "some-uuid", "purpose": "login"},
+        expires_delta=timedelta(minutes=15),
+    )
+    resp = await test_client.get(f"/api/v1/auth/verify?token={token}")
+    assert resp.status_code == 200
+    assert "Verification Failed" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_verify_missing_token_param(test_client: AsyncClient):
+    resp = await test_client.get("/api/v1/auth/verify")
     assert resp.status_code == 422

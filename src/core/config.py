@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     s3_bucket: str = "coa-storage"
     s3_region: str = "us-east-1"
 
+    # Email (Resend) — empty api key = disabled, logs URL instead
+    resend_api_key: str = ""
+    from_email: str = ""
+    app_url: str = ""
+
     # App
     app_name: str = "coa-migration"
     debug: bool = False

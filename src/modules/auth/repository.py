@@ -31,6 +31,23 @@ class UserRepository(BaseRepository[User]):
             user.last_login_at = func.now()
             await self.session.flush()
 
+    async def set_verification_token(self, user_id: UUID, token: str) -> None:
+        user = await self.get_by_id(user_id)
+        if user:
+            user.verification_token = token
+            await self.session.flush()
+
+    async def verify_user(self, user_id: UUID) -> None:
+        user = await self.get_by_id(user_id)
+        if user:
+            user.is_verified = True
+            user.verification_token = None
+            await self.session.flush()
+
+    async def get_by_verification_token(self, token: str) -> User | None:
+        result = await self.session.execute(select(User).where(User.verification_token == token))
+        return result.scalar_one_or_none()
+
 
 class OrganizationRepository:
     def __init__(self, session):
