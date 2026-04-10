@@ -1,7 +1,7 @@
 [project]
 name = "coa-migration-api"
 version = "3.0.0"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 description = "Chart of Accounts Migration Platform — modular monolith backend"
 dependencies = [
     "fastapi>=0.110",
@@ -99,7 +99,7 @@ indent-style = "space"
 # ── Mypy (static type checking — catches errors without running code) ─────────
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = false                   # start permissive, tighten over time
 warn_return_any = true
 warn_unused_configs = true

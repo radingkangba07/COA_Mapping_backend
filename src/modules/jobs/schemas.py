@@ -8,6 +8,10 @@ class JobCreate(BaseModel):
     project_id: uuid.UUID
     job_type: str
     input_data: dict | None = None
+    source_file_id: uuid.UUID | None = None
+    target_file_id: uuid.UUID | None = None
+    mapping_file_id: uuid.UUID | None = None
+    account_type_mapping_file_id: uuid.UUID | None = None
 
 
 class JobResponse(BaseModel):
@@ -20,6 +24,10 @@ class JobResponse(BaseModel):
     input_data: dict | None = None
     result_data: dict | None = None
     error_message: str | None = None
+    source_file_id: uuid.UUID | None = None
+    target_file_id: uuid.UUID | None = None
+    mapping_file_id: uuid.UUID | None = None
+    account_type_mapping_file_id: uuid.UUID | None = None
     created_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None

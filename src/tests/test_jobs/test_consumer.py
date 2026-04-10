@@ -56,15 +56,15 @@ async def test_handle_failed_result():
     mock_repo.update_status.assert_called_once_with(
         job_id=uuid.UUID(job_id),
         status="failed",
-        progress=100.0,
+        progress=0.0,
         result_data=None,
         error_message="File not found in R2",
     )
 
 
 @pytest.mark.asyncio
-async def test_handle_processing_result():
-    """Consumer updates job to processing with progress."""
+async def test_handle_running_result():
+    """Consumer maps Bhavna's 'running' status to 'processing'."""
     mock_js = AsyncMock()
     mock_repo = AsyncMock()
     consumer = NATSConsumer(mock_js, mock_repo)
@@ -72,7 +72,7 @@ async def test_handle_processing_result():
     job_id = str(uuid.uuid4())
     await consumer._handle_result({
         "job_id": job_id,
-        "status": "processing",
+        "status": "running",
         "progress": 45.0,
         "message": "Matching accounts...",
     })

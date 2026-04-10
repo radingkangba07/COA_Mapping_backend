@@ -36,10 +36,3 @@ class MatchingEngineProtocol(Protocol):
         target_names: list[str],
         threshold: int = 60,
     ) -> tuple[str, float]: ...
-    def create_hierarchical_mapping(
-        self,
-        source_data: list[dict],
-        target_data: list[dict] | None,
-        source_system: str,
-        target_system: str,
-    ) -> dict: ...

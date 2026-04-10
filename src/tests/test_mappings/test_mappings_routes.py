@@ -136,18 +136,17 @@ async def test_fuzzy_match_endpoint(authenticated_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_hierarchical_mapping_endpoint(authenticated_client: AsyncClient):
+    project_id = await _create_project(authenticated_client)
     resp = await authenticated_client.post(
         "/api/v1/mappings/hierarchical",
         json={
-            "source_data": [
-                {"Account Type": "Revenue", "Account Name": "Sales", "Account Number": "4000"},
-                {"Account Type": "Expense", "Account Name": "Rent", "Account Number": "5000"},
-            ],
-            "source_system": "quickbooks",
-            "target_system": "xero",
+            "project_id": project_id,
+            "source_file_id": "00000000-0000-0000-0000-000000000001",
+            "target_file_id": "00000000-0000-0000-0000-000000000002",
         },
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 201
     data = resp.json()
-    assert data["total_accounts"] == 2
-    assert data["total_types"] == 2
+    assert data["project_id"] == project_id
+    assert data["status"] == "completed"  # sync fallback
+    assert "job_id" in data

@@ -8,6 +8,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
 from src.modules.auth.models import User
+from src.modules.jobs.dependencies import get_job_service
+from src.modules.jobs.service import JobService
 from src.modules.mappings.dependencies import get_mapping_service, get_matching_engine
 from src.modules.mappings.matching import MatchingEngine
 from src.modules.mappings.schemas import (
@@ -23,7 +25,8 @@ from src.modules.mappings.schemas import (
     MappingUpdate,
 )
 from src.modules.mappings.service import MappingService
-from src.modules.projects.dependencies import require_project_access
+from src.modules.projects.dependencies import get_project_service, require_project_access
+from src.modules.projects.service import ProjectService
 
 logger = logging.getLogger(__name__)
 
@@ -231,23 +234,39 @@ async def export_mappings(
         return JSONResponse(status_code=500, content={"detail": "Failed to export mappings"})
 
 
-@router.post("/hierarchical", response_model=HierarchicalMappingResponse)
+@router.post("/hierarchical", response_model=HierarchicalMappingResponse, status_code=status.HTTP_201_CREATED)
 async def hierarchical_mapping(
     data: HierarchicalMappingRequest,
     user: User = Depends(get_current_user),
-    engine: MatchingEngine = Depends(get_matching_engine),
+    service: JobService = Depends(get_job_service),
+    project_service: ProjectService = Depends(get_project_service),
 ):
     try:
-        result = engine.create_hierarchical_mapping(
-            source_data=data.source_data,
-            target_data=data.target_data,
-            source_system=data.source_system,
-            target_system=data.target_system,
+        project = await project_service.get_project(data.project_id)
+        job = await service.create_job(
+            project_id=data.project_id,
+            job_type="account_matching",
+            source_file_id=data.source_file_id,
+            target_file_id=data.target_file_id,
+            mapping_file_id=data.mapping_file_id,
+            account_type_mapping_file_id=data.account_type_mapping_file_id,
+            triggered_by=user.id,
+            input_data={
+                "source_system": project.source_system,
+                "target_system": project.target_system,
+                "company_id": str(project.company_id),
+            },
         )
-        return result
+        return HierarchicalMappingResponse(
+            job_id=job.id,
+            project_id=job.project_id,
+            status=job.status,
+        )
+    except AppError:
+        raise
     except Exception:
-        logger.exception("Failed to create hierarchical mapping")
-        return JSONResponse(status_code=500, content={"detail": "Failed to create hierarchical mapping"})
+        logger.exception("Failed to create hierarchical mapping job")
+        return JSONResponse(status_code=500, content={"detail": "Failed to create mapping job"})
 
 
 @router.post("/fuzzy-match", response_model=FuzzyMatchResponse)
@@ -286,6 +305,7 @@ async def legacy_fuzzy_match(
 async def legacy_hierarchical_mapping(
     data: HierarchicalMappingRequest,
     user: User = Depends(get_current_user),
-    engine: MatchingEngine = Depends(get_matching_engine),
+    service: JobService = Depends(get_job_service),
+    project_service: ProjectService = Depends(get_project_service),
 ):
-    return await hierarchical_mapping(data, user, engine)
+    return await hierarchical_mapping(data, user, service, project_service)

@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # NATS JetStream (empty = disabled, sync fallback)
     nats_url: str = ""
     nats_stream_name: str = "COA_JOBS"
+    nats_subject_job_run: str = "jobs.mapping.run"
+    nats_subject_results: str = "jobs.mapping.status"
 
     # S3-Compatible Storage (DigitalOcean Spaces in production, MinIO for local dev)
     s3_endpoint: str = ""

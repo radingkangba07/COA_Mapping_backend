@@ -23,8 +23,25 @@ class JobService:
         self.session = session
         self.publisher = publisher
 
-    async def create_job(self, project_id: UUID, job_type: str, input_data: dict | None = None) -> Job:
-        job = await self.job_repo.create_job(project_id, job_type, input_data)
+    async def create_job(
+        self,
+        project_id: UUID,
+        job_type: str,
+        input_data: dict | None = None,
+        source_file_id: UUID | None = None,
+        target_file_id: UUID | None = None,
+        mapping_file_id: UUID | None = None,
+        account_type_mapping_file_id: UUID | None = None,
+        triggered_by: UUID | None = None,
+    ) -> Job:
+        job = await self.job_repo.create_job(
+            project_id, job_type, input_data,
+            source_file_id=source_file_id,
+            target_file_id=target_file_id,
+            mapping_file_id=mapping_file_id,
+            account_type_mapping_file_id=account_type_mapping_file_id,
+            triggered_by=triggered_by,
+        )
 
         if is_nats_available() and self.publisher:
             await self.publisher.publish_job(job)

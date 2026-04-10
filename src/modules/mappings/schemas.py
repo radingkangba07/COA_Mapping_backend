@@ -71,20 +71,17 @@ class MappingStatsResponse(BaseModel):
 
 
 class HierarchicalMappingRequest(BaseModel):
-    source_data: list[dict]
-    target_data: list[dict] | None = None
-    source_system: str
-    target_system: str
+    project_id: uuid.UUID
+    source_file_id: uuid.UUID
+    target_file_id: uuid.UUID
+    mapping_file_id: uuid.UUID | None = None
+    account_type_mapping_file_id: uuid.UUID | None = None
 
 
 class HierarchicalMappingResponse(BaseModel):
-    type_column: str | None = None
-    name_column: str | None = None
-    number_column: str | None = None
-    target_types: list = []
-    grouped_mappings: list = []
-    total_accounts: int = 0
-    total_types: int = 0
+    job_id: uuid.UUID
+    project_id: uuid.UUID
+    status: str
 
 
 class FuzzyMatchRequest(BaseModel):

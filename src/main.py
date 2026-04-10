@@ -10,7 +10,7 @@ from src.core.config import get_settings
 from src.core.database import close_db, init_db
 from src.core.exceptions import AppError
 from src.core.logging import setup_logging
-from src.core.nats_client import close_nats, connect_nats, is_nats_available
+from src.core.nats_client import close_nats, connect_nats, get_jetstream, is_nats_available
 from src.core.resend_client import close_resend, init_resend, is_resend_available
 from src.core.s3_client import close_s3_client, get_s3_client, init_s3_client
 from src.modules.auth.routes import router as auth_router
@@ -34,6 +34,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     await connect_nats(settings.nats_url, settings.nats_stream_name)
     init_s3_client()
+
+    # Start NATS result consumer if connected
+    if is_nats_available():
+        from src.core.database import _async_session_factory
+        from src.modules.jobs.consumer import NATSConsumer
+        from src.modules.jobs.repository import JobRepository
+
+        session = _async_session_factory()
+        consumer = NATSConsumer(get_jetstream(), JobRepository(session), session=session)
+        await consumer.start()
+        logger.info("NATS consumer started")
+
     init_resend()
     yield
     logger.info("Shutting down COA Migration API")

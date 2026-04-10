@@ -44,19 +44,8 @@ def upgrade() -> None:
     op.add_column('jobs', sa.Column('source_file_id', sa.UUID(), nullable=True))
     op.add_column('jobs', sa.Column('target_file_id', sa.UUID(), nullable=True))
     op.add_column('jobs', sa.Column('mapping_file_id', sa.UUID(), nullable=True))
+    op.add_column('jobs', sa.Column('account_type_mapping_file_id', sa.UUID(), nullable=True))
     op.add_column('jobs', sa.Column('triggered_by', sa.UUID(), nullable=True))
-    op.create_foreign_key(
-        'fk_jobs_source_file_id', 'jobs', 'project_files',
-        ['source_file_id'], ['id'], ondelete='SET NULL',
-    )
-    op.create_foreign_key(
-        'fk_jobs_target_file_id', 'jobs', 'project_files',
-        ['target_file_id'], ['id'], ondelete='SET NULL',
-    )
-    op.create_foreign_key(
-        'fk_jobs_mapping_file_id', 'jobs', 'project_files',
-        ['mapping_file_id'], ['id'], ondelete='SET NULL',
-    )
     op.create_foreign_key(
         'fk_jobs_triggered_by', 'jobs', 'users',
         ['triggered_by'], ['id'], ondelete='SET NULL',
@@ -77,10 +66,8 @@ def downgrade() -> None:
 
     # 6. Remove file ID columns and triggered_by from jobs
     op.drop_constraint('fk_jobs_triggered_by', 'jobs', type_='foreignkey')
-    op.drop_constraint('fk_jobs_mapping_file_id', 'jobs', type_='foreignkey')
-    op.drop_constraint('fk_jobs_target_file_id', 'jobs', type_='foreignkey')
-    op.drop_constraint('fk_jobs_source_file_id', 'jobs', type_='foreignkey')
     op.drop_column('jobs', 'triggered_by')
+    op.drop_column('jobs', 'account_type_mapping_file_id')
     op.drop_column('jobs', 'mapping_file_id')
     op.drop_column('jobs', 'target_file_id')
     op.drop_column('jobs', 'source_file_id')

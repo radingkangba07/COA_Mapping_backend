@@ -59,25 +59,6 @@ def test_find_best_target_name_empty(engine: MatchingEngine):
     assert score == 0
 
 
-def test_hierarchical_mapping_groups_by_type(engine: MatchingEngine):
-    source_data = [
-        {"Account Type": "Revenue", "Account Name": "Sales", "Account Number": "4000"},
-        {"Account Type": "Revenue", "Account Name": "Services", "Account Number": "4100"},
-        {"Account Type": "Expense", "Account Name": "Rent", "Account Number": "5000"},
-    ]
-    result = engine.create_hierarchical_mapping(
-        source_data=source_data,
-        target_data=None,
-        source_system="quickbooks",
-        target_system="xero",
-    )
-    assert result["total_accounts"] == 3
-    assert result["total_types"] == 2
-    assert result["type_column"] == "Account Type"
-    assert result["name_column"] == "Account Name"
-    assert result["number_column"] == "Account Number"
-
-
 def test_multiple_columns_matched(engine: MatchingEngine):
     target_fields = [
         {"id": "name", "name": "Name"},

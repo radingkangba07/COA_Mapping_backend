@@ -24,7 +24,15 @@ async def create_job(
     service: JobService = Depends(get_job_service),
 ):
     try:
-        return await service.create_job(data.project_id, data.job_type, data.input_data)
+        return await service.create_job(
+            data.project_id,
+            data.job_type,
+            data.input_data,
+            source_file_id=data.source_file_id,
+            target_file_id=data.target_file_id,
+            mapping_file_id=data.mapping_file_id,
+            account_type_mapping_file_id=data.account_type_mapping_file_id,
+        )
     except AppError:
         raise
     except Exception:

@@ -89,24 +89,21 @@ async def test_full_workflow(db_session):
         fuzzy = resp.json()
         assert len(fuzzy["mappings"]) == 3
 
-        # 6) Hierarchical mapping
+        # 6) Hierarchical mapping — creates a job (sync fallback, no NATS in tests)
         resp = await client.post(
             "/api/v1/mappings/hierarchical",
             json={
-                "source_data": [
-                    {"Account Type": "Income", "Account Name": "Sales Revenue", "Account Number": "4000"},
-                    {"Account Type": "Income", "Account Name": "Service Revenue", "Account Number": "4100"},
-                    {"Account Type": "Expense", "Account Name": "Office Rent", "Account Number": "5000"},
-                ],
-                "source_system": "quickbooks",
-                "target_system": "xero",
+                "project_id": project_id,
+                "source_file_id": "00000000-0000-0000-0000-000000000001",
+                "target_file_id": "00000000-0000-0000-0000-000000000002",
             },
             headers=auth,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         hier = resp.json()
-        assert hier["total_accounts"] == 3
-        assert hier["total_types"] == 2
+        assert hier["project_id"] == project_id
+        assert hier["status"] == "completed"  # sync fallback
+        assert "job_id" in hier
 
         # 7) Bulk save mappings
         resp = await client.post(
