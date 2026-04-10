@@ -8,7 +8,7 @@ async def test_list_erp_systems(test_client: AsyncClient):
     resp = await test_client.get("/api/v1/erp-systems")
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) == 6
+    assert len(data) == 9
 
 
 @pytest.mark.asyncio

@@ -18,7 +18,7 @@ async def test_upload_file(authenticated_client: AsyncClient):
     project_id = await _create_project(authenticated_client)
     resp = await authenticated_client.post(
         "/api/v1/storage/upload",
-        data={"project_id": project_id, "file_type": "upload"},
+        data={"project_id": project_id, "file_type": "source_erp"},
         files={"file": ("test.csv", b"col1,col2\nval1,val2", "text/csv")},
     )
     # If S3 is not running, this may fail with 500 — that's expected in unit test env

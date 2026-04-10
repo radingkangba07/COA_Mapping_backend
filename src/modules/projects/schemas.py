@@ -24,8 +24,8 @@ class CompanyResponse(BaseModel):
 class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     company_id: str  # slug
-    source_erp: str = ""
-    target_erp: str = ""
+    source_system: str = ""
+    target_system: str = ""
     company_name: str | None = None
     description: str | None = None
 
@@ -35,8 +35,8 @@ class ProjectUpdate(BaseModel):
     description: str | None = None
     status: str | None = None
     current_step: int | None = None
-    source_erp: str | None = None
-    target_erp: str | None = None
+    source_system: str | None = None
+    target_system: str | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -44,8 +44,8 @@ class ProjectResponse(BaseModel):
     company_id: uuid.UUID
     name: str
     description: str | None = None
-    source_erp: str
-    target_erp: str
+    source_system: str
+    target_system: str
     status: str
     current_step: int = 0
     created_by: uuid.UUID
@@ -82,8 +82,8 @@ class DashboardProjectResponse(BaseModel):
     id: uuid.UUID
     name: str
     description: str | None = None
-    source_erp: str
-    target_erp: str
+    source_system: str
+    target_system: str
     status: str
     current_step: int = 0
     created_by: uuid.UUID

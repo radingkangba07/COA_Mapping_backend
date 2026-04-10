@@ -75,7 +75,7 @@ class JobService:
 
     async def cancel_job(self, job_id: UUID) -> None:
         job = await self.get_job(job_id)
-        if job.status not in ("pending", "queued"):
-            raise NotFoundError("Only pending/queued jobs can be cancelled")
+        if job.status not in ("queued",):
+            raise NotFoundError("Only queued jobs can be cancelled")
         await self.job_repo.update_status(job.id, status="failed", error_message="Cancelled by user")
         await self.session.commit()

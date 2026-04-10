@@ -40,6 +40,6 @@ class MatchingEngineProtocol(Protocol):
         self,
         source_data: list[dict],
         target_data: list[dict] | None,
-        source_erp: str,
-        target_erp: str,
+        source_system: str,
+        target_system: str,
     ) -> dict: ...

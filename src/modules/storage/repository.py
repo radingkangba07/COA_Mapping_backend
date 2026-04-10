@@ -22,7 +22,7 @@ class FileRepository(BaseRepository[File]):
     ) -> list[File]:
         query = select(File).where(File.project_id == project_id)
         if not include_deleted:
-            query = query.where(File.is_deleted == False)  # noqa: E712
+            query = query.where(File.is_active == True)  # noqa: E712
         if file_type:
             query = query.where(File.file_type == file_type)
         query = query.order_by(File.created_at.desc())
@@ -32,6 +32,6 @@ class FileRepository(BaseRepository[File]):
     async def soft_delete(self, file_id: UUID) -> None:
         file = await self.get_by_id(file_id)
         if file:
-            file.is_deleted = True
+            file.is_active = False
             file.updated_at = func.now()
             await self.session.flush()

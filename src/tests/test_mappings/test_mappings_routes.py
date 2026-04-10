@@ -124,7 +124,7 @@ async def test_fuzzy_match_endpoint(authenticated_client: AsyncClient):
         "/api/v1/mappings/fuzzy-match",
         json={
             "source_columns": ["Name", "Type"],
-            "target_erp": "xero",
+            "target_system": "xero",
             "threshold": 60,
         },
     )
@@ -143,8 +143,8 @@ async def test_hierarchical_mapping_endpoint(authenticated_client: AsyncClient):
                 {"Account Type": "Revenue", "Account Name": "Sales", "Account Number": "4000"},
                 {"Account Type": "Expense", "Account Name": "Rent", "Account Number": "5000"},
             ],
-            "source_erp": "quickbooks",
-            "target_erp": "xero",
+            "source_system": "quickbooks",
+            "target_system": "xero",
         },
     )
     assert resp.status_code == 200

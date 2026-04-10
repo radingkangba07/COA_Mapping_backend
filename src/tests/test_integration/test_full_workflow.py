@@ -54,8 +54,8 @@ async def test_full_workflow(db_session):
                 "name": "Workflow Project",
                 "company_id": "workflow-proj-co",
                 "company_name": "Workflow Proj Co",
-                "source_erp": "quickbooks",
-                "target_erp": "xero",
+                "source_system": "quickbooks",
+                "target_system": "xero",
             },
             headers=auth,
         )
@@ -73,14 +73,14 @@ async def test_full_workflow(db_session):
         resp = await client.get("/api/v1/erp-systems")
         assert resp.status_code == 200
         erp_systems = resp.json()
-        assert len(erp_systems) == 6
+        assert len(erp_systems) == 9
 
         # 5) Fuzzy match columns
         resp = await client.post(
             "/api/v1/mappings/fuzzy-match",
             json={
                 "source_columns": ["Account Name", "Account Type", "Account Number"],
-                "target_erp": "xero",
+                "target_system": "xero",
                 "threshold": 60,
             },
             headers=auth,
@@ -98,8 +98,8 @@ async def test_full_workflow(db_session):
                     {"Account Type": "Income", "Account Name": "Service Revenue", "Account Number": "4100"},
                     {"Account Type": "Expense", "Account Name": "Office Rent", "Account Number": "5000"},
                 ],
-                "source_erp": "quickbooks",
-                "target_erp": "xero",
+                "source_system": "quickbooks",
+                "target_system": "xero",
             },
             headers=auth,
         )

@@ -112,15 +112,15 @@ async def legacy_root():
     return {"message": "COA Migration System API", "version": "3.0.0", "architecture": "postgresql-modular"}
 
 
-@legacy_erp_router.get("/account-types/{target_erp}")
-async def legacy_account_types(target_erp: str, service: ERPConfigService = Depends(get_erp_service)):
+@legacy_erp_router.get("/account-types/{target_system}")
+async def legacy_account_types(target_system: str, service: ERPConfigService = Depends(get_erp_service)):
     try:
-        system = service.get_system(target_erp)
+        system = service.get_system(target_system)
         if not system:
-            raise NotFoundError(f"Target ERP '{target_erp}' not found")
-        return {"account_types": service.get_account_types(target_erp)}
+            raise NotFoundError(f"Target ERP '{target_system}' not found")
+        return {"account_types": service.get_account_types(target_system)}
     except NotFoundError:
         raise
     except Exception:
-        logger.exception("Failed to get account types for '%s'", target_erp)
+        logger.exception("Failed to get account types for '%s'", target_system)
         return JSONResponse(status_code=500, content={"detail": "Failed to load account types"})

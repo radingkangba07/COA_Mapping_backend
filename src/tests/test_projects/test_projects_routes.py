@@ -36,8 +36,8 @@ async def test_create_project_default_erp(authenticated_client: AsyncClient):
     )
     assert resp.status_code == 201
     data = resp.json()
-    assert data["source_erp"] == ""
-    assert data["target_erp"] == ""
+    assert data["source_system"] == ""
+    assert data["target_system"] == ""
 
 
 @pytest.mark.asyncio

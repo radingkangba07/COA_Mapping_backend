@@ -94,13 +94,13 @@ class MatchingEngine:
         self,
         source_data: list[dict],
         target_data: list[dict] | None,
-        source_erp: str,
-        target_erp: str,
+        source_system: str,
+        target_system: str,
     ) -> dict:
         # Get target account types from ERP service
         target_types: list[str] = []
         if self.erp_service:
-            target_types = self.erp_service.get_account_types(target_erp)
+            target_types = self.erp_service.get_account_types(target_system)
 
         # Auto-detect columns from source data keys
         type_col = None

@@ -10,22 +10,25 @@ from src.core.database import Base
 
 
 class File(Base):
-    __tablename__ = "files"
+    __tablename__ = "project_files"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    company_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     job_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True
     )
-    file_type: Mapped[str] = mapped_column(String(50), nullable=False, server_default="upload")
+    file_type: Mapped[str] = mapped_column(String(50), nullable=False, server_default="source_erp")
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False, server_default="application/octet-stream")
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
-    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     columns: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -38,9 +41,9 @@ class File(Base):
 
     __table_args__ = (
         Index(
-            "ix_files_project_type_active",
+            "ix_project_files_project_type_active",
             "project_id",
             "file_type",
-            postgresql_where=text("NOT is_deleted"),
+            postgresql_where=text("is_active"),
         ),
     )

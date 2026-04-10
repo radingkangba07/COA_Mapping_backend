@@ -36,12 +36,12 @@ async def connect_nats(url: str, stream_name: str = "COA_JOBS") -> None:
             _js = _nc.jetstream()
             # Ensure stream exists
             try:
-                await _js.find_stream_info_by_subject("coa.jobs.*")
+                await _js.find_stream_info_by_subject("jobs.mapping.run")
             except Exception:
                 await _js.add_stream(
                     StreamConfig(
                         name=stream_name,
-                        subjects=["coa.jobs.*", "coa.results.*"],
+                        subjects=["jobs.mapping.*", "coa.results.*"],
                         retention=RetentionPolicy.WORK_QUEUE,
                         max_deliver=3,
                         ack_wait=60,

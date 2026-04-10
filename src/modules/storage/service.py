@@ -90,7 +90,7 @@ class StorageService:
 
     async def download_file(self, file_id: UUID) -> tuple[bytes, str, str]:
         file = await self.file_repo.get_by_id(file_id)
-        if not file or file.is_deleted:
+        if not file or not file.is_active:
             raise NotFoundError("File not found")
         if not self.store:
             raise NotFoundError("Storage not available")
@@ -99,7 +99,7 @@ class StorageService:
 
     async def get_signed_url(self, file_id: UUID, expires_in: int = 3600) -> str | None:
         file = await self.file_repo.get_by_id(file_id)
-        if not file or file.is_deleted:
+        if not file or not file.is_active:
             raise NotFoundError("File not found")
         if not self.store:
             return None
@@ -107,7 +107,7 @@ class StorageService:
 
     async def get_file(self, file_id: UUID) -> File:
         file = await self.file_repo.get_by_id(file_id)
-        if not file or file.is_deleted:
+        if not file or not file.is_active:
             raise NotFoundError("File not found")
         return file
 
@@ -116,7 +116,7 @@ class StorageService:
 
     async def delete_file(self, file_id: UUID) -> None:
         file = await self.file_repo.get_by_id(file_id)
-        if not file or file.is_deleted:
+        if not file or not file.is_active:
             raise NotFoundError("File not found")
         await self.file_repo.soft_delete(file_id)
         # S3 delete happens immediately. To support undo/recovery in the future,

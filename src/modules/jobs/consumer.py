@@ -18,11 +18,13 @@ class NATSConsumer:
     async def start(self) -> None:
         self.sub = await self.js.subscribe("coa.results.*", durable="api-result-consumer", manual_ack=True)
         asyncio.create_task(self._consume())
+        logger.info("NATS result consumer started, listening on coa.results.*")
 
     async def _consume(self) -> None:
         async for msg in self.sub.messages:
             try:
                 data = json.loads(msg.data.decode())
+                logger.info("Received result for job %s (status=%s)", data.get("job_id"), data.get("status"))
                 await self._handle_result(data)
                 await msg.ack()
             except Exception:
@@ -40,6 +42,7 @@ class NATSConsumer:
                 result_data=data.get("result_data"),
                 error_message=data.get("error_message"),
             )
+            logger.info("Job %s %s", job_id, status)
         else:
             await self.job_repo.update_status(
                 job_id=job_id,
@@ -47,3 +50,4 @@ class NATSConsumer:
                 progress=data.get("progress", 0.0),
                 message=data.get("message"),
             )
+            logger.info("Job %s processing (%.1f%%)", job_id, data.get("progress", 0.0))

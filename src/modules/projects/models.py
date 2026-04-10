@@ -33,8 +33,8 @@ class Project(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source_erp: Mapped[str] = mapped_column(String(100), nullable=False, server_default="")
-    target_erp: Mapped[str] = mapped_column(String(100), nullable=False, server_default="")
+    source_system: Mapped[str] = mapped_column(String(100), nullable=False, server_default="")
+    target_system: Mapped[str] = mapped_column(String(100), nullable=False, server_default="")
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="draft")
     current_step: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_by: Mapped[uuid.UUID] = mapped_column(

@@ -68,8 +68,8 @@ def test_hierarchical_mapping_groups_by_type(engine: MatchingEngine):
     result = engine.create_hierarchical_mapping(
         source_data=source_data,
         target_data=None,
-        source_erp="quickbooks",
-        target_erp="xero",
+        source_system="quickbooks",
+        target_system="xero",
     )
     assert result["total_accounts"] == 3
     assert result["total_types"] == 2

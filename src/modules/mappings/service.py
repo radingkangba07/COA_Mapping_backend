@@ -94,6 +94,8 @@ class MappingService:
                     "Status": m.status,
                     "Remark": m.remark,
                     "Notes": m.notes or "",
+                    "approval_scope": "",
+                    "project_id": str(m.project_id),
                 }
             )
         df = pd.DataFrame(data)

@@ -48,8 +48,8 @@ class ProjectService:
             company_id=company.id,
             name=data.name,
             description=data.description,
-            source_erp=data.source_erp,
-            target_erp=data.target_erp,
+            source_system=data.source_system,
+            target_system=data.target_system,
             created_by=user.id,
             updated_by=user.id,
         )
@@ -80,7 +80,7 @@ class ProjectService:
     async def update_project(self, project_id: UUID, data: ProjectUpdate, user: User | None = None) -> Project:
         project = await self.get_project(project_id)
         update_data = data.model_dump(exclude_unset=True)
-        allowed = {"name", "description", "status", "current_step", "source_erp", "target_erp"}
+        allowed = {"name", "description", "status", "current_step", "source_system", "target_system"}
         filtered = {k: v for k, v in update_data.items() if k in allowed}
         if not filtered and not user:
             return project
@@ -178,8 +178,8 @@ class ProjectService:
                     id=project.id,
                     name=project.name,
                     description=project.description,
-                    source_erp=project.source_erp,
-                    target_erp=project.target_erp,
+                    source_system=project.source_system,
+                    target_system=project.target_system,
                     status=project.status,
                     current_step=project.current_step,
                     created_by=project.created_by,
@@ -239,8 +239,8 @@ class ProjectService:
             "company_id": str(project.company_id),
             "name": project.name,
             "description": project.description,
-            "source_erp": project.source_erp,
-            "target_erp": project.target_erp,
+            "source_system": project.source_system,
+            "target_system": project.target_system,
             "status": project.status,
             "current_step": project.current_step,
             "created_by": str(project.created_by),

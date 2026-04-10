@@ -73,8 +73,8 @@ class MappingStatsResponse(BaseModel):
 class HierarchicalMappingRequest(BaseModel):
     source_data: list[dict]
     target_data: list[dict] | None = None
-    source_erp: str
-    target_erp: str
+    source_system: str
+    target_system: str
 
 
 class HierarchicalMappingResponse(BaseModel):
@@ -89,7 +89,7 @@ class HierarchicalMappingResponse(BaseModel):
 
 class FuzzyMatchRequest(BaseModel):
     source_columns: list[str]
-    target_erp: str
+    target_system: str
     threshold: int = 60
 
 

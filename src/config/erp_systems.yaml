@@ -15,3 +15,13 @@ sage:
 
 xero:
   name: Xero
+
+pastel:
+  name: Pastel
+
+odoo:
+  name: Odoo
+
+zoho:
+  name: Zoho Books
+

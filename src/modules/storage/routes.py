@@ -25,7 +25,7 @@ files_router = APIRouter(prefix="/api/v1/files", tags=["files"])
 async def upload_file(
     file: UploadFile = File(...),
     project_id: UUID = Form(...),
-    file_type: str = Form("upload"),
+    file_type: str = Form("source_erp"),
     job_id: UUID | None = Form(None),
     user: User = Depends(get_current_user),
     service: StorageService = Depends(get_storage_service),
@@ -143,8 +143,8 @@ async def files_upload(
     file: UploadFile = File(...),
     project_id: str = Query(...),
     file_type: str = Query(...),
-    source_erp: str = Query(default="unknown"),
-    target_erp: str = Query(default="unknown"),
+    source_system: str = Query(default="unknown"),
+    target_system: str = Query(default="unknown"),
     user: User = Depends(get_current_user),
     service: StorageService = Depends(get_storage_service),
 ):

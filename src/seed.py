@@ -44,8 +44,8 @@ async def seed(session: AsyncSession) -> None:
     p1 = Project(
         name="QuickBooks to Xero Migration",
         company_id=acme.id,
-        source_erp="quickbooks",
-        target_erp="xero",
+        source_system="quickbooks",
+        target_system="xero",
         status="in_progress",
         description="Q1 2024 COA migration project",
         created_by=john.id,
@@ -53,8 +53,8 @@ async def seed(session: AsyncSession) -> None:
     p2 = Project(
         name="SAP to NetSuite Migration",
         company_id=acme.id,
-        source_erp="sap",
-        target_erp="oracle_netsuite",
+        source_system="sap",
+        target_system="oracle_netsuite",
         status="completed",
         description="Legacy system migration",
         created_by=john.id,
@@ -62,8 +62,8 @@ async def seed(session: AsyncSession) -> None:
     p3 = Project(
         name="Sage to Dynamics Migration",
         company_id=globex.id,
-        source_erp="sage",
-        target_erp="microsoft_dynamics",
+        source_system="sage",
+        target_system="microsoft_dynamics",
         status="draft",
         description="Planned Q2 migration",
         created_by=jane.id,

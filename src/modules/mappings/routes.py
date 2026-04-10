@@ -241,8 +241,8 @@ async def hierarchical_mapping(
         result = engine.create_hierarchical_mapping(
             source_data=data.source_data,
             target_data=data.target_data,
-            source_erp=data.source_erp,
-            target_erp=data.target_erp,
+            source_system=data.source_system,
+            target_system=data.target_system,
         )
         return result
     except Exception:
@@ -259,7 +259,7 @@ async def fuzzy_match(
     try:
         target_fields: list[dict] = []
         if engine.erp_service:
-            system = engine.erp_service.get_system(data.target_erp)
+            system = engine.erp_service.get_system(data.target_system)
             if system:
                 target_fields = system.get("fields", [])
 
