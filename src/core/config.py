@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     from_email: str = ""
     app_url: str = ""
+    frontend_url: str = ""
 
     # App
     app_name: str = "coa-migration"

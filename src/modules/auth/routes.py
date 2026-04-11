@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from src.core.config import get_settings
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_auth_service, get_current_user
 from src.modules.auth.email_service import _template_env
@@ -38,7 +39,10 @@ async def verify_email(token: str, service: AuthService = Depends(get_auth_servi
     try:
         result = await service.verify_email(token)
         if result["success"]:
-            html = _template_env.get_template("verify_success.html").render(message=result["message"])
+            html = _template_env.get_template("verify_success.html").render(
+                message=result["message"],
+                frontend_url=get_settings().frontend_url,
+            )
         else:
             html = _template_env.get_template("verify_error.html").render(error=result["error"])
         return HTMLResponse(content=html)
