@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from src.core.config import Settings, get_settings
 from src.core.database import Base, get_db
+from src.core.security import create_access_token
 from src.main import app
 
 # Test database URL — overridable via TEST_DATABASE_URL env var so CI and local
@@ -85,19 +86,41 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
 @pytest_asyncio.fixture
 async def seed_user(test_client: AsyncClient) -> dict[str, Any]:
-    """Login a test user (auto-creates via mock auth) and return user data."""
-    response = await test_client.post(
-        "/api/v1/auth/login",
-        json={"user_id": "testuser"},
+    """Register, verify, and return a test user with a real JWT access token."""
+    # Register
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": "Test User", "email": "testuser@example.com", "org_name": "Test Org"},
     )
-    return {"user_id": "testuser", "token": response.json()["token"]}
+
+    # Get verification token from DB via verify endpoint
+    # We need to directly create a verified user — use the service internals
+    # Instead, we can get the user and generate a token directly
+    from src.core.database import get_db as _get_db
+
+    db_override = app.dependency_overrides.get(_get_db)
+    async for session in db_override():
+        from src.modules.auth.repository import UserRepository
+
+        user_repo = UserRepository(session)
+        user = await user_repo.get_by_email("testuser@example.com")
+
+        # Verify user directly
+        await user_repo.verify_user(user.id)
+        await session.commit()
+        await session.refresh(user)
+
+        # Generate real JWT access token
+        access_token = create_access_token(data={"sub": str(user.id)})
+
+        return {"user_id": str(user.id), "token": access_token, "email": "testuser@example.com"}
 
 
 @pytest_asyncio.fixture
 async def authenticated_client(
     test_client: AsyncClient, seed_user: dict[str, Any]
 ) -> AsyncGenerator[AsyncClient, None]:
-    """HTTP client with a valid mock Bearer token."""
+    """HTTP client with a valid JWT Bearer token."""
     test_client.headers["Authorization"] = f"Bearer {seed_user['token']}"
     yield test_client
     test_client.headers.pop("Authorization", None)

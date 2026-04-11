@@ -95,12 +95,12 @@ Logging is configured automatically on startup via `src/core/logging.py`.
 - **Format**: `timestamp | LEVEL | module | message`
 - **Output**: stdout (suitable for Docker/cloud log aggregation)
 
-All service operations (login, project CRUD, file upload, job creation) and errors are logged. Logs include the environment on startup:
+All service operations (registration, login, project CRUD, file upload, job creation) and errors are logged. Logs include the environment on startup:
 
 ```
 2026-04-05 10:30:00 | INFO     | src.main | Starting COA Migration API (env=development)
 2026-04-05 10:30:00 | INFO     | src.core.database | Database connected
-2026-04-05 10:30:01 | INFO     | src.modules.auth.service | User 'admin' logged in
+2026-04-05 10:30:01 | INFO     | src.modules.auth.service | Magic link sent to 'user@example.com'
 ```
 
 ## Optional Services
@@ -165,7 +165,7 @@ uv run ruff format src/ --check
 
 | Module | Endpoints | Auth Required |
 |--------|-----------|---------------|
-| Auth | `POST /api/v1/auth/login`, `/me`, `/logout` | No (login) |
+| Auth | `POST /register`, `POST /login`, `GET /verify`, `GET /magic-link`, `POST /refresh`, `POST /logout`, `GET /me` | No (except `/me`) |
 | Projects | `/api/v1/projects`, `/companies`, `/dashboard` | Yes |
 | Mappings | `/api/v1/mappings/fuzzy-match`, `/hierarchical`, `/project/{id}` | Yes |
 | ERP | `/api/v1/erp-systems`, `/sample-data/{id}` | No |

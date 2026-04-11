@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.sql import func
 
 from src.core.base_repository import BaseRepository
-from src.modules.auth.models import Organization, OrganizationMember, User
+from src.modules.auth.models import Organization, OrganizationMember, RefreshToken, User
 
 
 class UserRepository(BaseRepository[User]):
@@ -48,6 +48,54 @@ class UserRepository(BaseRepository[User]):
         result = await self.session.execute(select(User).where(User.verification_token == token))
         return result.scalar_one_or_none()
 
+    async def set_magic_link_token(self, user_id: UUID, token: str) -> None:
+        user = await self.get_by_id(user_id)
+        if user:
+            user.magic_link_token = token
+            await self.session.flush()
+
+    async def get_by_magic_link_token(self, token: str) -> User | None:
+        result = await self.session.execute(select(User).where(User.magic_link_token == token))
+        return result.scalar_one_or_none()
+
+    async def clear_magic_link_token(self, user_id: UUID) -> None:
+        user = await self.get_by_id(user_id)
+        if user:
+            user.magic_link_token = None
+            await self.session.flush()
+
+
+class RefreshTokenRepository:
+    def __init__(self, session):
+        self.session = session
+
+    async def create(self, user_id: UUID, token_hash: str, expires_at) -> RefreshToken:
+        rt = RefreshToken(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
+        self.session.add(rt)
+        await self.session.flush()
+        return rt
+
+    async def get_by_token_hash(self, token_hash: str) -> RefreshToken | None:
+        result = await self.session.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == token_hash, RefreshToken.revoked_at.is_(None))
+        )
+        return result.scalar_one_or_none()
+
+    async def revoke(self, token_hash: str) -> None:
+        result = await self.session.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
+        rt = result.scalar_one_or_none()
+        if rt:
+            rt.revoked_at = func.now()
+            await self.session.flush()
+
+    async def revoke_all_for_user(self, user_id: UUID) -> None:
+        result = await self.session.execute(
+            select(RefreshToken).where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+        )
+        for rt in result.scalars():
+            rt.revoked_at = func.now()
+        await self.session.flush()
+
 
 class OrganizationRepository:
     def __init__(self, session):
@@ -68,3 +116,11 @@ class OrganizationRepository:
         self.session.add(member)
         await self.session.flush()
         return member
+
+    async def get_memberships_for_user(self, user_id: UUID) -> list:
+        result = await self.session.execute(
+            select(OrganizationMember, Organization.name.label("org_name"))
+            .join(Organization, OrganizationMember.org_id == Organization.id)
+            .where(OrganizationMember.user_id == user_id)
+        )
+        return result.all()

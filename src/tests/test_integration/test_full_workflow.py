@@ -1,12 +1,12 @@
 """End-to-end integration test covering full COA migration workflow.
 
 Steps:
-1) Login (auto-create user) → 2) Create company → 3) Create project (auto-admin)
-4) List ERP systems → 5) Fuzzy match columns → 6) Hierarchical mapping
-7) Bulk save mappings (project status → in_progress) → 8) Get stats
-9) Export as Excel → 10) List project files
-11) Create job (sync fallback) → 12) Dashboard → 13) Grant access
-14) Viewer can read but not edit → 15) Revoke access
+1) Register + verify user → 2) Login via magic link → 3) Create company
+4) Create project (auto-admin) → 5) List ERP systems → 6) Fuzzy match columns
+7) Hierarchical mapping → 8) Bulk save mappings → 9) Get stats
+10) Export as Excel → 11) List project files
+12) Create job (sync fallback) → 13) Dashboard → 14) Grant access
+15) Viewer can read but not edit → 16) Revoke access
 """
 
 import pytest
@@ -14,7 +14,9 @@ from httpx import ASGITransport, AsyncClient
 
 from src.core.config import get_settings
 from src.core.database import get_db
+from src.core.security import create_access_token
 from src.main import app
+from src.modules.auth.repository import UserRepository
 
 
 @pytest.mark.asyncio
@@ -30,14 +32,21 @@ async def test_full_workflow(db_session):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # 1) Login (auto-creates user)
+        # 1) Register + verify user
         resp = await client.post(
-            "/api/v1/auth/login",
-            json={"user_id": "workflow"},
+            "/api/v1/auth/register",
+            json={"name": "Workflow User", "email": "workflow@example.com", "org_name": "Workflow Org"},
         )
-        assert resp.status_code == 200
-        tokens = resp.json()
-        auth = {"Authorization": f"Bearer {tokens['token']}"}
+        assert resp.status_code == 201
+
+        user_repo = UserRepository(db_session)
+        user = await user_repo.get_by_email("workflow@example.com")
+        await user_repo.verify_user(user.id)
+        await db_session.commit()
+
+        # Generate access token for authenticated requests
+        access_token = create_access_token(data={"sub": str(user.id)})
+        auth = {"Authorization": f"Bearer {access_token}"}
 
         # 2) Create company
         resp = await client.post(
@@ -171,7 +180,6 @@ async def test_full_workflow(db_session):
         dashboard = resp.json()
         assert "companies" in dashboard
         assert len(dashboard["companies"]) >= 1
-        # Find our project's company
         found = False
         for company in dashboard["companies"]:
             for p in company["projects"]:
@@ -180,13 +188,17 @@ async def test_full_workflow(db_session):
                     found = True
         assert found, "Project not found in dashboard"
 
-        # 13) Login as second user and grant viewer access
+        # 13) Register + verify second user and grant viewer access
         resp = await client.post(
-            "/api/v1/auth/login",
-            json={"user_id": "viewer"},
+            "/api/v1/auth/register",
+            json={"name": "Viewer User", "email": "viewer@example.com", "org_name": "Viewer Org"},
         )
-        assert resp.status_code == 200
-        viewer_uuid = resp.json()["user"]["id"]
+        assert resp.status_code == 201
+
+        viewer = await user_repo.get_by_email("viewer@example.com")
+        await user_repo.verify_user(viewer.id)
+        await db_session.commit()
+        viewer_uuid = str(viewer.id)
 
         resp = await client.post(
             f"/api/v1/projects/{project_id}/access",
@@ -196,8 +208,9 @@ async def test_full_workflow(db_session):
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
-        # Login as viewer
-        viewer_auth = {"Authorization": "Bearer mock-token-viewer"}
+        # Viewer auth
+        viewer_token = create_access_token(data={"sub": viewer_uuid})
+        viewer_auth = {"Authorization": f"Bearer {viewer_token}"}
 
         # 14) Viewer can read
         resp = await client.get(f"/api/v1/projects/{project_id}", headers=viewer_auth)
