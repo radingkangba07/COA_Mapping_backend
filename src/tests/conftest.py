@@ -1,5 +1,6 @@
 """Shared test fixtures for all modules."""
 
+import os
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -11,11 +12,19 @@ from src.core.config import Settings, get_settings
 from src.core.database import Base, get_db
 from src.main import app
 
+# Test database URL — overridable via TEST_DATABASE_URL env var so CI and local
+# devs can point at their own Postgres without editing this file. Default
+# matches the credentials in .github/workflows/ci.yml so CI works out of the box.
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://coa_user:coa_pass@localhost:5432/coa_migration_test",
+)
+
 
 def get_test_settings() -> Settings:
     """Return settings pointing at the test database."""
     return Settings(
-        database_url="postgresql+asyncpg://manasa@localhost:5432/coa_migration_test",
+        database_url=TEST_DATABASE_URL,
         jwt_secret="test-secret-key-for-testing-only",
         nats_url="",
         s3_endpoint="",
