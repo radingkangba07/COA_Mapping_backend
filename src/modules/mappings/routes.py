@@ -80,8 +80,8 @@ async def list_mappings(
                     "source_name": m.source_account_name,
                     "target_name": m.target_account_name or "",
                     "score": score,
-                    "remark": m.remark,
-                    "status": m.status,
+                    "remark": m.mapping_source,
+                    "status": m.mapping_status,
                 }
             )
             group_scores[key].append(score)

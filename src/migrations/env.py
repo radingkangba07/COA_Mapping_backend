@@ -12,7 +12,7 @@ from src.core.database import Base
 # Import all models so Alembic can detect them for autogenerate
 from src.modules.auth.models import User  # noqa: F401
 from src.modules.jobs.models import Job  # noqa: F401
-from src.modules.mappings.models import Mapping  # noqa: F401
+from src.modules.mappings.models import CoaMapping, CoaMappingSuggestion  # noqa: F401
 from src.modules.projects.models import Company, Project, ProjectAccess  # noqa: F401
 from src.modules.storage.models import File  # noqa: F401
 

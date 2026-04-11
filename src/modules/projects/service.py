@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.modules.auth.models import User
-from src.modules.mappings.models import Mapping
+from src.modules.mappings.models import CoaMapping
 from src.modules.projects.models import Company, Project, ProjectAccess
 from src.modules.projects.protocols import (
     CompanyRepositoryProtocol,
@@ -135,7 +135,10 @@ class ProjectService:
 
         # Optimized JOIN query — no N+1
         mapping_count_subq = (
-            select(func.count(Mapping.id)).where(Mapping.project_id == Project.id).correlate(Project).scalar_subquery()
+            select(func.count(CoaMapping.id))
+            .where(CoaMapping.project_id == Project.id)
+            .correlate(Project)
+            .scalar_subquery()
         )
 
         result = await self.session.execute(
@@ -219,15 +222,15 @@ class ProjectService:
             )
 
         # Get mappings
-        mappings = await self.session.execute(select(Mapping).where(Mapping.project_id == project_id))
+        mappings = await self.session.execute(select(CoaMapping).where(CoaMapping.project_id == project_id))
         mapping_list = mappings.scalars().all()
 
         # Get mapping stats
         stats = {"total": 0, "suggested": 0, "approved": 0, "rejected": 0, "modified": 0}
         for m in mapping_list:
             stats["total"] += 1
-            if m.status in stats:
-                stats[m.status] += 1
+            if m.mapping_status in stats:
+                stats[m.mapping_status] += 1
 
         # Get created_by name
         from src.modules.auth.models import User as UserModel
@@ -269,8 +272,8 @@ class ProjectService:
                     "target_account_name": m.target_account_name or "",
                     "target_account_type": m.target_account_type or "",
                     "confidence_score": m.confidence_score,
-                    "status": m.status,
-                    "remark": m.remark,
+                    "status": m.mapping_status,
+                    "remark": m.mapping_source,
                     "created_at": m.created_at.isoformat(),
                 }
                 for m in mapping_list

@@ -12,9 +12,9 @@ class MappingCreate(BaseModel):
     target_account_name: str | None = None
     target_account_type: str | None = None
     confidence_score: float = 0.0
-    status: str = "suggested"
-    remark: str = "ai"
-    source_row_data: dict | None = None
+    mapping_status: str = "suggested"
+    mapping_source: str = "ai"
+    source_to_map: dict | None = None
     notes: str | None = None
 
 
@@ -26,8 +26,8 @@ class MappingUpdate(BaseModel):
     target_account_name: str | None = None
     target_account_type: str | None = None
     confidence_score: float | None = None
-    status: str | None = None
-    remark: str | None = None
+    mapping_status: str | None = None
+    mapping_source: str | None = None
     notes: str | None = None
 
 
@@ -41,9 +41,9 @@ class MappingResponse(BaseModel):
     target_account_name: str | None = None
     target_account_type: str | None = None
     confidence_score: float
-    status: str
-    remark: str
-    source_row_data: dict | None = None
+    mapping_status: str
+    mapping_source: str
+    source_to_map: dict | None = None
     notes: str | None = None
     created_at: datetime
     updated_at: datetime

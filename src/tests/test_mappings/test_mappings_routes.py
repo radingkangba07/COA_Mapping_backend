@@ -30,7 +30,7 @@ async def test_bulk_save_mappings(authenticated_client: AsyncClient):
             "target_account_number": "400",
             "target_account_type": "Revenue",
             "confidence_score": 95.0,
-            "status": "suggested",
+            "mapping_status": "suggested",
         },
     ]
     resp = await authenticated_client.post(
@@ -49,14 +49,14 @@ async def test_bulk_save_replaces_existing(authenticated_client: AsyncClient):
     # First save
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
-        json=[{"source_account_name": "Old", "status": "suggested", "confidence_score": 50}],
+        json=[{"source_account_name": "Old", "mapping_status": "suggested", "confidence_score": 50}],
     )
     # Second save replaces
     resp = await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
         json=[
-            {"source_account_name": "New1", "status": "suggested", "confidence_score": 80},
-            {"source_account_name": "New2", "status": "suggested", "confidence_score": 90},
+            {"source_account_name": "New1", "mapping_status": "suggested", "confidence_score": 80},
+            {"source_account_name": "New2", "mapping_status": "suggested", "confidence_score": 90},
         ],
     )
     assert resp.json()["mapping_count"] == 2
@@ -74,8 +74,8 @@ async def test_list_mappings_with_filters(authenticated_client: AsyncClient):
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
         json=[
-            {"source_account_name": "A", "status": "suggested", "confidence_score": 80},
-            {"source_account_name": "B", "status": "approved", "confidence_score": 90},
+            {"source_account_name": "A", "mapping_status": "suggested", "confidence_score": 80},
+            {"source_account_name": "B", "mapping_status": "approved", "confidence_score": 90},
         ],
     )
     resp = await authenticated_client.get(
@@ -95,8 +95,8 @@ async def test_mapping_stats(authenticated_client: AsyncClient):
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
         json=[
-            {"source_account_name": "A", "status": "suggested", "confidence_score": 80},
-            {"source_account_name": "B", "status": "approved", "confidence_score": 90},
+            {"source_account_name": "A", "mapping_status": "suggested", "confidence_score": 80},
+            {"source_account_name": "B", "mapping_status": "approved", "confidence_score": 90},
         ],
     )
     resp = await authenticated_client.get(f"/api/v1/mappings/project/{project_id}/stats")
@@ -111,7 +111,7 @@ async def test_export_mappings_excel(authenticated_client: AsyncClient):
     project_id = await _create_project(authenticated_client)
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
-        json=[{"source_account_name": "Export", "status": "suggested", "confidence_score": 80}],
+        json=[{"source_account_name": "Export", "mapping_status": "suggested", "confidence_score": 80}],
     )
     resp = await authenticated_client.post(f"/api/v1/mappings/project/{project_id}/export")
     assert resp.status_code == 200

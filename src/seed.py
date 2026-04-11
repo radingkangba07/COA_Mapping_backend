@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from src.core.config import get_settings
 from src.core.database import Base
 from src.modules.auth.models import User
-from src.modules.mappings.models import Mapping
+from src.modules.mappings.models import CoaMapping
 from src.modules.projects.models import Company, Project, ProjectAccess
 
 logging.basicConfig(level=logging.INFO)
@@ -85,34 +85,34 @@ async def seed(session: AsyncSession) -> None:
     session.add_all(access_entries)
     await session.flush()
 
-    # Sample mappings
+    # Sample mapping suggestions
     mappings = [
-        Mapping(
+        CoaMapping(
             project_id=p1.id,
             source_account_name="Checking",
             source_account_type="Bank",
             target_account_name="Business Bank Account",
             target_account_type="BANK",
             confidence_score=95.0,
-            status="approved",
+            mapping_status="approved",
         ),
-        Mapping(
+        CoaMapping(
             project_id=p1.id,
             source_account_name="Accounts Receivable",
             source_account_type="Accounts Receivable",
             target_account_name="Trade Debtors",
             target_account_type="CURRENT",
             confidence_score=88.0,
-            status="suggested",
+            mapping_status="suggested",
         ),
-        Mapping(
+        CoaMapping(
             project_id=p2.id,
             source_account_name="Cash and Equivalents",
             source_account_type="Asset",
             target_account_name="Petty Cash",
             target_account_type="Bank",
             confidence_score=100.0,
-            status="approved",
+            mapping_status="approved",
         ),
     ]
     session.add_all(mappings)
