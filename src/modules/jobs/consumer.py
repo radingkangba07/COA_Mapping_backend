@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
 from uuid import UUID
 
 from nats.js import JetStreamContext
@@ -17,11 +16,12 @@ class NATSConsumer:
         self.js = jetstream
         self.job_repo = job_repo
         self.session = session
+        self._consume_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         subject = get_settings().nats_subject_results
         self.sub = await self.js.subscribe(subject, durable="api-result-consumer", manual_ack=True)
-        asyncio.create_task(self._consume())
+        self._consume_task = asyncio.create_task(self._consume())
         logger.info("NATS result consumer started, listening on %s", subject)
 
     async def _consume(self) -> None:

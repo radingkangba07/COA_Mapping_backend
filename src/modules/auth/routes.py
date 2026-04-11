@@ -69,7 +69,8 @@ async def login(
 ):
     try:
         return await service.request_magic_link(
-            email=data.email, background_tasks=background_tasks,
+            email=data.email,
+            background_tasks=background_tasks,
         )
     except AppError:
         raise

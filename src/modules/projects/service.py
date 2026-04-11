@@ -209,17 +209,17 @@ class ProjectService:
         access_rows = await self.access_repo.list_for_project(project_id)
         access_list = []
         for a in access_rows:
-            access_list.append({
-                "user_id": str(a["user_id"]),
-                "user_name": a.get("user_name", ""),
-                "permission": a["permission"],
-                "assigned_at": str(a["created_at"]),
-            })
+            access_list.append(
+                {
+                    "user_id": str(a["user_id"]),
+                    "user_name": a.get("user_name", ""),
+                    "permission": a["permission"],
+                    "assigned_at": str(a["created_at"]),
+                }
+            )
 
         # Get mappings
-        mappings = await self.session.execute(
-            select(Mapping).where(Mapping.project_id == project_id)
-        )
+        mappings = await self.session.execute(select(Mapping).where(Mapping.project_id == project_id))
         mapping_list = mappings.scalars().all()
 
         # Get mapping stats
@@ -231,6 +231,7 @@ class ProjectService:
 
         # Get created_by name
         from src.modules.auth.models import User as UserModel
+
         creator = await self.session.get(UserModel, project.created_by)
         created_by_name = creator.name if creator else None
 
@@ -252,7 +253,9 @@ class ProjectService:
                 "slug": company.slug,
                 "name": company.name,
                 "description": company.description,
-            } if company else {},
+            }
+            if company
+            else {},
             "user_permission": user_permission,
             "access_list": access_list,
             "mappings": [

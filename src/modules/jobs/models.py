@@ -34,6 +34,4 @@ class Job(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (
-        Index("ix_jobs_status", "status"),
-    )
+    __table_args__ = (Index("ix_jobs_status", "status"),)

@@ -36,9 +36,10 @@ async def connect_nats(url: str, stream_name: str = "COA_JOBS") -> None:
             _js = _nc.jetstream()
             # Ensure stream exists
             from src.core.config import get_settings
+
             settings = get_settings()
             try:
-                await _js.find_stream_info_by_subject(settings.nats_subject_job_run)
+                await _js.find_stream_info_by_subject(settings.nats_subject_job_run)  # type: ignore[attr-defined]
             except Exception:
                 await _js.add_stream(
                     StreamConfig(

@@ -51,9 +51,7 @@ class Project(Base):
     company: Mapped["Company"] = relationship(back_populates="projects")
     access_list: Mapped[list["ProjectAccess"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        Index("ix_projects_status", "status"),
-    )
+    __table_args__ = (Index("ix_projects_status", "status"),)
 
 
 class ProjectAccess(Base):

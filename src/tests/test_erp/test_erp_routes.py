@@ -3,6 +3,7 @@
 import pytest
 from httpx import AsyncClient
 
+
 @pytest.mark.asyncio
 async def test_list_erp_systems(test_client: AsyncClient):
     resp = await test_client.get("/api/v1/erp-systems")

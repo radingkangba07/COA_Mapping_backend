@@ -57,6 +57,13 @@ case ${ENV} in
         ;;
 esac
 
+# Allow CI to override the refs (used by pull-request-triggered deploys,
+# where testing should track the PR head, not `develop`). Defaults to the
+# per-environment branch above when unset, so manual and push-based
+# invocations keep working unchanged.
+BE_REF=${BE_REF:-$BE_BRANCH}
+FE_REF=${FE_REF:-$FE_BRANCH}
+
 ENV_DIR=${APP_DIR}/environments/${ENV}
 COMPOSE_PATH=${ENV_DIR}/${COMPOSE_FILE}
 
@@ -69,33 +76,36 @@ fi
 cd ${ENV_DIR}
 
 echo "=== COA Deploy [${ENV}] — $(date -u) ==="
-echo "    backend  branch: ${BE_BRANCH}"
-echo "    frontend branch: ${FE_BRANCH}"
-echo "    compose file:    ${COMPOSE_PATH}"
-echo "    project name:    ${PROJECT_NAME}"
+echo "    backend  ref:  ${BE_REF}"
+echo "    frontend ref:  ${FE_REF}"
+echo "    compose file:  ${COMPOSE_PATH}"
+echo "    project name:  ${PROJECT_NAME}"
 
 dc() {
     docker compose -p ${PROJECT_NAME} -f ${COMPOSE_PATH} "$@"
 }
 
 deploy_backend() {
-    echo "[${ENV}/Backend] Pulling latest from ${BE_BRANCH}..."
+    echo "[${ENV}/Backend] Pulling latest from ${BE_REF}..."
     cd ${ENV_DIR}/backend
     git fetch origin
-    git reset --hard origin/${BE_BRANCH}
+    git reset --hard origin/${BE_REF}
     cd ${ENV_DIR}
 
     echo "[${ENV}/Backend] Rebuilding api-service..."
     dc build --no-cache api-service
     dc up -d api-service
+
+    echo "[${ENV}/Backend] Applying database migrations..."
+    dc exec -T api-service uv run alembic upgrade head
     echo "[${ENV}/Backend] Done."
 }
 
 deploy_frontend() {
-    echo "[${ENV}/Frontend] Pulling latest from ${FE_BRANCH}..."
+    echo "[${ENV}/Frontend] Pulling latest from ${FE_REF}..."
     cd ${ENV_DIR}/frontend
     git fetch origin
-    git reset --hard origin/${FE_BRANCH}
+    git reset --hard origin/${FE_REF}
     cd ${ENV_DIR}
 
     echo "[${ENV}/Frontend] Rebuilding frontend..."

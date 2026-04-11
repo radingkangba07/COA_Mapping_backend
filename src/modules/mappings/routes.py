@@ -74,25 +74,29 @@ async def list_mappings(
         for m in flat_mappings:
             key = (m.source_account_type or "", m.target_account_type or "")
             score = m.confidence_score
-            groups[key].append({
-                "source_number": m.source_account_number or "",
-                "source_name": m.source_account_name,
-                "target_name": m.target_account_name or "",
-                "score": score,
-                "remark": m.remark,
-                "status": m.status,
-            })
+            groups[key].append(
+                {
+                    "source_number": m.source_account_number or "",
+                    "source_name": m.source_account_name,
+                    "target_name": m.target_account_name or "",
+                    "score": score,
+                    "remark": m.remark,
+                    "status": m.status,
+                }
+            )
             group_scores[key].append(score)
 
         result = []
         for (source_type_val, target_type_val), accounts in groups.items():
             scores = group_scores[(source_type_val, target_type_val)]
-            result.append({
-                "source_type": source_type_val,
-                "target_type": target_type_val,
-                "confidence": round(sum(scores) / len(scores), 1) if scores else 0,
-                "accounts": accounts,
-            })
+            result.append(
+                {
+                    "source_type": source_type_val,
+                    "target_type": target_type_val,
+                    "confidence": round(sum(scores) / len(scores), 1) if scores else 0,
+                    "accounts": accounts,
+                }
+            )
 
         return result
     except AppError:

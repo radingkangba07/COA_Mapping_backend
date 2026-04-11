@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.auth.email_service import EmailService
-from src.modules.auth.repository import OrganizationRepository, UserRepository
+from src.modules.auth.repository import OrganizationRepository, RefreshTokenRepository, UserRepository
 from src.modules.auth.service import AuthService
 
 
@@ -12,11 +12,13 @@ from src.modules.auth.service import AuthService
 async def test_register_and_verify_flow(db_session: AsyncSession):
     user_repo = UserRepository(db_session)
     org_repo = OrganizationRepository(db_session)
+    refresh_token_repo = RefreshTokenRepository(db_session)
     email_service = EmailService()
     service = AuthService(
         user_repo=user_repo,
-        session=db_session,
         org_repo=org_repo,
+        refresh_token_repo=refresh_token_repo,
+        session=db_session,
         email_service=email_service,
     )
 
@@ -44,10 +46,12 @@ async def test_register_and_verify_flow(db_session: AsyncSession):
 async def test_verify_token_reuse(db_session: AsyncSession):
     user_repo = UserRepository(db_session)
     org_repo = OrganizationRepository(db_session)
+    refresh_token_repo = RefreshTokenRepository(db_session)
     service = AuthService(
         user_repo=user_repo,
-        session=db_session,
         org_repo=org_repo,
+        refresh_token_repo=refresh_token_repo,
+        session=db_session,
         email_service=EmailService(),
     )
 

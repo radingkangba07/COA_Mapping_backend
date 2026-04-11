@@ -35,7 +35,9 @@ class JobService:
         triggered_by: UUID | None = None,
     ) -> Job:
         job = await self.job_repo.create_job(
-            project_id, job_type, input_data,
+            project_id,
+            job_type,
+            input_data,
             source_file_id=source_file_id,
             target_file_id=target_file_id,
             mapping_file_id=mapping_file_id,

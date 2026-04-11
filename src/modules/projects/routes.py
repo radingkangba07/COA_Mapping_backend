@@ -54,7 +54,10 @@ async def list_projects(
 ):
     try:
         projects = await service.list_projects(user, skip=skip, limit=limit)
-        return ProjectListResponse(projects=projects, total=len(projects))
+        return ProjectListResponse(
+            projects=[ProjectResponse.model_validate(p) for p in projects],
+            total=len(projects),
+        )
     except AppError:
         raise
     except Exception:
@@ -234,8 +237,9 @@ async def dashboard_project(
 # --- Dashboard CRUD aliases (legacy frontend uses /dashboard/projects/* for writes) ---
 
 
-@router.post("/dashboard/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED,
-             include_in_schema=False)
+@router.post(
+    "/dashboard/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False
+)
 async def dashboard_create_project(
     data: ProjectCreate,
     user: User = Depends(get_current_user),

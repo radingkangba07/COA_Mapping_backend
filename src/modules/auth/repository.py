@@ -18,7 +18,7 @@ class UserRepository(BaseRepository[User]):
         result = await self.session.execute(select(User).where(User.email == email))
         return result.scalar_one_or_none()
 
-    async def create(self, user_id: str, name: str, email: str) -> User:
+    async def create_user(self, user_id: str, name: str, email: str) -> User:
         user = User(user_id=user_id, email=email, name=name)
         self.session.add(user)
         await self.session.flush()
@@ -79,7 +79,8 @@ class RefreshTokenRepository:
         result = await self.session.execute(
             select(RefreshToken).where(RefreshToken.token_hash == token_hash, RefreshToken.revoked_at.is_(None))
         )
-        return result.scalar_one_or_none()
+        rt: RefreshToken | None = result.scalar_one_or_none()
+        return rt
 
     async def revoke(self, token_hash: str) -> None:
         result = await self.session.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
@@ -103,7 +104,8 @@ class OrganizationRepository:
 
     async def get_by_name(self, name: str) -> Organization | None:
         result = await self.session.execute(select(Organization).where(Organization.name == name))
-        return result.scalar_one_or_none()
+        org: Organization | None = result.scalar_one_or_none()
+        return org
 
     async def create(self, name: str) -> Organization:
         org = Organization(name=name)
@@ -123,4 +125,4 @@ class OrganizationRepository:
             .join(Organization, OrganizationMember.org_id == Organization.id)
             .where(OrganizationMember.user_id == user_id)
         )
-        return result.all()
+        return list(result.all())

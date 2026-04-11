@@ -101,9 +101,17 @@ async def test_publish_job_payload_keys():
 
     data = json.loads(mock_js.publish.call_args.args[1].decode())
     expected_keys = {
-        "job_id", "project_id", "company_id", "job_type",
-        "source_file_id", "target_file_id", "mapping_file_id",
-        "account_type_mapping_file_id", "triggered_by",
-        "created_at", "event_at", "metadata",
+        "job_id",
+        "project_id",
+        "company_id",
+        "job_type",
+        "source_file_id",
+        "target_file_id",
+        "mapping_file_id",
+        "account_type_mapping_file_id",
+        "triggered_by",
+        "created_at",
+        "event_at",
+        "metadata",
     }
     assert set(data.keys()) == expected_keys

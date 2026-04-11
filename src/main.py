@@ -36,13 +36,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     init_s3_client()
 
     # Start NATS result consumer if connected
-    if is_nats_available():
-        from src.core.database import _async_session_factory
+    jetstream = get_jetstream()
+    if jetstream is not None:
+        from src.core import database
         from src.modules.jobs.consumer import NATSConsumer
         from src.modules.jobs.repository import JobRepository
 
-        session = _async_session_factory()
-        consumer = NATSConsumer(get_jetstream(), JobRepository(session), session=session)
+        assert database._async_session_factory is not None, "init_db() must run before NATS consumer start"
+        session = database._async_session_factory()
+        consumer = NATSConsumer(jetstream, JobRepository(session), session=session)
         await consumer.start()
         logger.info("NATS consumer started")
 

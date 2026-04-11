@@ -26,10 +26,10 @@ class AuthService:
     def __init__(
         self,
         user_repo: UserRepositoryProtocol,
+        org_repo: OrganizationRepositoryProtocol,
+        refresh_token_repo: RefreshTokenRepositoryProtocol,
         session=None,
-        org_repo: OrganizationRepositoryProtocol | None = None,
         email_service=None,
-        refresh_token_repo: RefreshTokenRepositoryProtocol | None = None,
     ):
         self.user_repo = user_repo
         self.session = session
@@ -55,7 +55,7 @@ class AuthService:
             logger.warning("Registration failed: duplicate org name '%s'", org_name)
             raise ConflictError("Organization name already taken")
 
-        user = await self.user_repo.create(
+        user = await self.user_repo.create_user(
             user_id=email.split("@")[0],
             email=email,
             name=name,
@@ -138,7 +138,9 @@ class AuthService:
         if self.email_service and background_tasks:
             background_tasks.add_task(
                 self.email_service.send_magic_link_email,
-                to=email, name=user.name, token=token,
+                to=email,
+                name=user.name,
+                token=token,
             )
 
         logger.info("Magic link sent to '%s'", email)
@@ -214,9 +216,7 @@ class AuthService:
 
         new_hash = hashlib.sha256(new_refresh.encode()).hexdigest()
         expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
-        await self.refresh_token_repo.create(
-            user_id=stored.user_id, token_hash=new_hash, expires_at=expires_at
-        )
+        await self.refresh_token_repo.create(user_id=stored.user_id, token_hash=new_hash, expires_at=expires_at)
 
         await self.session.commit()
         logger.info("Tokens refreshed for user %s", user_id)

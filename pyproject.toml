@@ -107,9 +107,13 @@ warn_unused_ignores = true
 check_untyped_defs = true        # type-check inside untyped functions
 disallow_untyped_decorators = true
 no_implicit_optional = true
+exclude = [
+    "src/tests/",                # tests rely on loose fixtures; not type-checked
+    "src/migrations/versions/",  # alembic autogen output; not type-checked
+]
 
 [[tool.mypy.overrides]]
-module = ["nats.*", "boto3.*", "botocore.*", "jose.*", "rapidfuzz.*", "resend.*"]
+module = ["nats.*", "boto3.*", "botocore.*", "jose.*", "rapidfuzz.*", "resend.*", "yaml"]
 ignore_missing_imports = true
 
 # ── Pytest ────────────────────────────────────────────────────────────────────

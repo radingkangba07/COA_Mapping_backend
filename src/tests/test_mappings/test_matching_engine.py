@@ -49,7 +49,7 @@ def test_find_best_target_name_exact(engine: MatchingEngine):
 
 
 def test_find_best_target_name_fuzzy(engine: MatchingEngine):
-    name, score = engine.find_best_target_name("Rev", ["Revenue", "Expense", "Asset"])
+    _name, score = engine.find_best_target_name("Rev", ["Revenue", "Expense", "Asset"])
     assert score > 0
 
 

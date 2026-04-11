@@ -75,7 +75,8 @@ class ProjectAccessRepository:
                 ProjectAccess.project_id == project_id,
             )
         )
-        return result.scalar_one_or_none()
+        access: ProjectAccess | None = result.scalar_one_or_none()
+        return access
 
     async def list_for_project(self, project_id: UUID) -> list[dict]:
         result = await self.session.execute(

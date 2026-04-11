@@ -26,7 +26,9 @@ class NATSPublisher:
                 "source_file_id": str(job.source_file_id) if job.source_file_id else None,
                 "target_file_id": str(job.target_file_id) if job.target_file_id else None,
                 "mapping_file_id": str(job.mapping_file_id) if job.mapping_file_id else None,
-                "account_type_mapping_file_id": str(job.account_type_mapping_file_id) if job.account_type_mapping_file_id else None,
+                "account_type_mapping_file_id": str(job.account_type_mapping_file_id)
+                if job.account_type_mapping_file_id
+                else None,
                 "triggered_by": str(job.triggered_by) if job.triggered_by else None,
                 "created_at": job.created_at.isoformat() if job.created_at else None,
                 "event_at": datetime.now(UTC).isoformat(),

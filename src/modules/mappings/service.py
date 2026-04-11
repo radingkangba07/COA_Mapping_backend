@@ -67,9 +67,7 @@ class MappingService:
         await self.mapping_repo.delete(mapping_id)
         await self.session.commit()
 
-    async def bulk_update_by_score(
-        self, project_id: UUID, min_score: float, max_score: float, new_status: str
-    ) -> dict:
+    async def bulk_update_by_score(self, project_id: UUID, min_score: float, max_score: float, new_status: str) -> dict:
         result = await self.mapping_repo.update_by_score_range(project_id, min_score, max_score, new_status)
         await self.session.commit()
         return {"matched": result["matched"], "modified": result["modified"], "status": new_status}

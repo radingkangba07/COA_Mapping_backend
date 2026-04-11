@@ -26,8 +26,8 @@ class MatchingEngine:
                 score_cutoff=threshold,
             )
 
-            best_match = None
-            best_score = 0
+            best_match: str | None = None
+            best_score: float = 0.0
             match_type = "fuzzy"
 
             if name_match and (not id_match or name_match[1] >= id_match[1]):

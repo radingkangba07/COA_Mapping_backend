@@ -114,7 +114,11 @@ async def list_project_files(
 ):
     try:
         files = await service.list_files(project_id, file_type)
-        return FileListResponse(project_id=project_id, files=files, total=len(files))
+        return FileListResponse(
+            project_id=project_id,
+            files=[FileResponse.model_validate(f) for f in files],
+            total=len(files),
+        )
     except AppError:
         raise
     except Exception:
@@ -273,7 +277,11 @@ async def files_list_project(
 ):
     try:
         files = await service.list_files(project_id, file_type)
-        return FileListResponse(project_id=project_id, files=files, total=len(files))
+        return FileListResponse(
+            project_id=project_id,
+            files=[FileResponse.model_validate(f) for f in files],
+            total=len(files),
+        )
     except AppError:
         raise
     except Exception:

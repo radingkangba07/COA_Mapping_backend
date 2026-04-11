@@ -23,12 +23,14 @@ async def test_handle_completed_result():
     consumer = NATSConsumer(mock_js, mock_repo)
 
     job_id = str(uuid.uuid4())
-    await consumer._handle_result({
-        "job_id": job_id,
-        "status": "completed",
-        "progress": 100.0,
-        "result_data": {"mapping_count": 42},
-    })
+    await consumer._handle_result(
+        {
+            "job_id": job_id,
+            "status": "completed",
+            "progress": 100.0,
+            "result_data": {"mapping_count": 42},
+        }
+    )
 
     mock_repo.update_status.assert_called_once_with(
         job_id=uuid.UUID(job_id),
@@ -47,11 +49,13 @@ async def test_handle_failed_result():
     consumer = NATSConsumer(mock_js, mock_repo)
 
     job_id = str(uuid.uuid4())
-    await consumer._handle_result({
-        "job_id": job_id,
-        "status": "failed",
-        "error_message": "File not found in R2",
-    })
+    await consumer._handle_result(
+        {
+            "job_id": job_id,
+            "status": "failed",
+            "error_message": "File not found in R2",
+        }
+    )
 
     mock_repo.update_status.assert_called_once_with(
         job_id=uuid.UUID(job_id),
@@ -70,12 +74,14 @@ async def test_handle_running_result():
     consumer = NATSConsumer(mock_js, mock_repo)
 
     job_id = str(uuid.uuid4())
-    await consumer._handle_result({
-        "job_id": job_id,
-        "status": "running",
-        "progress": 45.0,
-        "message": "Matching accounts...",
-    })
+    await consumer._handle_result(
+        {
+            "job_id": job_id,
+            "status": "running",
+            "progress": 45.0,
+            "message": "Matching accounts...",
+        }
+    )
 
     mock_repo.update_status.assert_called_once_with(
         job_id=uuid.UUID(job_id),
@@ -93,10 +99,12 @@ async def test_handle_result_defaults():
     consumer = NATSConsumer(mock_js, mock_repo)
 
     job_id = str(uuid.uuid4())
-    await consumer._handle_result({
-        "job_id": job_id,
-        "status": "completed",
-    })
+    await consumer._handle_result(
+        {
+            "job_id": job_id,
+            "status": "completed",
+        }
+    )
 
     mock_repo.update_status.assert_called_once_with(
         job_id=uuid.UUID(job_id),

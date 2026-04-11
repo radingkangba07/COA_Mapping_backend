@@ -1,6 +1,7 @@
+from typing import cast
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import CursorResult, delete, func, select, update
 
 from src.core.base_repository import BaseRepository
 from src.modules.mappings.models import Mapping
@@ -41,7 +42,8 @@ class MappingRepository(BaseRepository[Mapping]):
             return 0
         result = await self.session.execute(update(Mapping).where(Mapping.id.in_(mapping_ids)).values(status=status))
         await self.session.flush()
-        return result.rowcount  # type: ignore[return-value]
+        rowcount: int = cast(CursorResult, result).rowcount
+        return rowcount
 
     async def update_by_score_range(
         self, project_id: UUID, min_score: float, max_score: float, new_status: str
@@ -57,7 +59,8 @@ class MappingRepository(BaseRepository[Mapping]):
         )
         result = await self.session.execute(stmt)
         await self.session.flush()
-        return {"matched": result.rowcount, "modified": result.rowcount}
+        rowcount = cast(CursorResult, result).rowcount
+        return {"matched": rowcount, "modified": rowcount}
 
     async def count_by_project(self, project_id: UUID) -> int:
         result = await self.session.execute(select(func.count(Mapping.id)).where(Mapping.project_id == project_id))
