@@ -125,8 +125,8 @@ async def grant_access(
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        await service.grant_access(project_id, data.user_id, data.permission, user)
-        return {"success": True, "message": f"Access granted to {data.user_id}"}
+        await service.grant_access(project_id, data.email, data.permission, user)
+        return {"success": True, "message": f"Access granted to {data.email}"}
     except AppError:
         raise
     except Exception:
@@ -303,8 +303,8 @@ async def dashboard_grant_access(
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        await service.grant_access(project_id, data.user_id, data.permission, user)
-        return {"success": True, "message": f"Access granted to {data.user_id}"}
+        await service.grant_access(project_id, data.email, data.permission, user)
+        return {"success": True, "message": f"Access granted to {data.email}"}
     except AppError:
         raise
     except Exception:

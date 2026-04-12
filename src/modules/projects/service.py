@@ -129,17 +129,24 @@ class ProjectService:
             await self.session.commit()
         logger.info("Project %s deleted", project_id)
 
-    async def grant_access(self, project_id: UUID, user_id: UUID, permission: str, granter: User) -> ProjectAccess:
+    async def grant_access(self, project_id: UUID, email: str, permission: str, granter: User) -> ProjectAccess:
         await self.get_project(project_id)
+        # Look up user by email
+        from src.modules.auth.repository import UserRepository
+
+        user_repo = UserRepository(self.session)
+        target_user = await user_repo.get_by_email(email)
+        if not target_user:
+            raise NotFoundError(f"User with email '{email}' not found")
         result = await self.access_repo.grant(
-            user_id=user_id,
+            user_id=target_user.id,
             project_id=project_id,
             permission=permission,
             assigned_by=granter.id,
         )
         if self.session:
             await self.session.commit()
-        logger.info("Granted '%s' access to user %s on project %s", permission, user_id, project_id)
+        logger.info("Granted '%s' access to user %s on project %s", permission, target_user.id, project_id)
         return result
 
     async def revoke_access(self, project_id: UUID, user_id: UUID) -> None:

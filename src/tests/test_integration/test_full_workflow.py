@@ -202,7 +202,7 @@ async def test_full_workflow(db_session):
 
         resp = await client.post(
             f"/api/v1/projects/{project_id}/access",
-            json={"user_id": viewer_uuid, "permission": "viewer"},
+            json={"email": "viewer@example.com", "permission": "viewer"},
             headers=auth,
         )
         assert resp.status_code == 200

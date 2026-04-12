@@ -64,7 +64,7 @@ class ProjectListResponse(BaseModel):
 
 
 class AccessGrant(BaseModel):
-    user_id: uuid.UUID
+    email: str
     permission: str = "viewer"
 
 
