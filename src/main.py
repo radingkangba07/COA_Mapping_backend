@@ -14,6 +14,7 @@ from src.core.nats_client import close_nats, connect_nats, get_jetstream, is_nat
 from src.core.resend_client import close_resend, init_resend, is_resend_available
 from src.core.s3_client import close_s3_client, get_s3_client, init_s3_client
 from src.modules.auth.routes import router as auth_router
+from src.modules.auth.routes import users_router
 from src.modules.erp.routes import legacy_erp_router
 from src.modules.erp.routes import router as erp_router
 from src.modules.jobs.routes import router as jobs_router
@@ -86,6 +87,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 # Routers
 app.include_router(auth_router)
+app.include_router(users_router)
 app.include_router(projects_router)
 app.include_router(mappings_router)
 app.include_router(erp_router)

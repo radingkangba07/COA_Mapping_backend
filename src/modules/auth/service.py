@@ -261,14 +261,19 @@ class AuthService:
             raise ForbiddenError("User not found or inactive")
         return user
 
+    async def get_user_orgs(self, user: User) -> list[dict]:
+        """Return the user's organization memberships."""
+        memberships = await self.org_repo.get_memberships_for_user(user.id)
+        return [{"id": member.org_id, "name": org_name, "role": member.role} for member, org_name in memberships]
+
     async def get_me(self, user: User) -> dict:
         """Return user profile with org memberships."""
-        memberships = await self.org_repo.get_memberships_for_user(user.id)
+        orgs = await self.get_user_orgs(user)
         return {
             "id": user.id,
             "user_id": user.user_id,
             "name": user.name,
             "email": user.email,
             "is_verified": user.is_verified,
-            "orgs": [{"id": member.org_id, "name": org_name, "role": member.role} for member, org_name in memberships],
+            "orgs": orgs,
         }

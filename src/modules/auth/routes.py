@@ -13,6 +13,7 @@ from src.modules.auth.schemas import (
     MagicLinkRequest,
     MagicLinkResponse,
     MeResponse,
+    OrgMembership,
     RefreshRequest,
     RegisterRequest,
     RegisterResponse,
@@ -135,3 +136,20 @@ async def me(user: User = Depends(get_current_user), service: AuthService = Depe
     except Exception:
         logger.exception("Failed to get user profile")
         return JSONResponse(status_code=500, content={"detail": "Failed to get user profile"})
+
+
+users_router = APIRouter(prefix="/api/v1/users", tags=["users"])
+
+
+@users_router.get("/me/orgs", response_model=list[OrgMembership])
+async def get_my_orgs(
+    user: User = Depends(get_current_user),
+    service: AuthService = Depends(get_auth_service),
+):
+    try:
+        return await service.get_user_orgs(user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to get user orgs")
+        return JSONResponse(status_code=500, content={"detail": "Failed to get user orgs"})
