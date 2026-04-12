@@ -55,7 +55,7 @@ async def list_projects(
     try:
         projects = await service.list_projects(user, skip=skip, limit=limit)
         return ProjectListResponse(
-            projects=[ProjectResponse.model_validate(p) for p in projects],
+            projects=[ProjectResponse(**p) for p in projects],
             total=len(projects),
         )
     except AppError:
@@ -72,7 +72,7 @@ async def get_project(
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        return await service.get_project(project_id)
+        return await service.get_project_with_users(project_id)
     except AppError:
         raise
     except Exception:

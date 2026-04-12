@@ -1,7 +1,9 @@
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql import func
 
 from src.core.base_repository import BaseRepository
@@ -42,6 +44,39 @@ class ProjectRepository(BaseRepository[Project]):
             return []
         result = await self.session.execute(select(Project).where(Project.id.in_(project_ids)))
         return list(result.scalars().all())
+
+    async def list_by_ids_with_users(self, project_ids: list[UUID]) -> list[Any]:
+        if not project_ids:
+            return []
+        creator = aliased(User, flat=True)
+        updater = aliased(User, flat=True)
+        result = await self.session.execute(
+            select(
+                Project,
+                creator.name.label("created_by_name"),
+                updater.name.label("updated_by_name"),
+            )
+            .outerjoin(creator, Project.created_by == creator.id)
+            .outerjoin(updater, Project.updated_by == updater.id)
+            .where(Project.id.in_(project_ids))
+            .order_by(Project.updated_at.desc())
+        )
+        return list(result.all())
+
+    async def get_by_id_with_users(self, project_id: UUID) -> Any | None:
+        creator = aliased(User, flat=True)
+        updater = aliased(User, flat=True)
+        result = await self.session.execute(
+            select(
+                Project,
+                creator.name.label("created_by_name"),
+                updater.name.label("updated_by_name"),
+            )
+            .outerjoin(creator, Project.created_by == creator.id)
+            .outerjoin(updater, Project.updated_by == updater.id)
+            .where(Project.id == project_id)
+        )
+        return result.one_or_none()
 
     async def list_by_company(self, company_id: UUID, skip: int = 0, limit: int = 50) -> list[Project]:
         result = await self.session.execute(

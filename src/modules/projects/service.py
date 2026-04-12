@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -70,12 +71,39 @@ class ProjectService:
             raise NotFoundError("Project not found")
         return project
 
-    async def list_projects(self, user: User, skip: int = 0, limit: int = 50) -> list[Project]:
+    async def list_projects(self, user: User, skip: int = 0, limit: int = 50) -> list[dict]:
         access_list = await self.access_repo.list_for_user(user.id)
         project_ids = [a.project_id for a in access_list]
         if not project_ids:
             return []
-        return await self.project_repo.list_by_ids(project_ids)
+        rows = await self.project_repo.list_by_ids_with_users(project_ids)
+        return [self._project_row_to_dict(row) for row in rows]
+
+    async def get_project_with_users(self, project_id: UUID) -> dict:
+        row = await self.project_repo.get_by_id_with_users(project_id)
+        if not row:
+            raise NotFoundError("Project not found")
+        return self._project_row_to_dict(row)
+
+    @staticmethod
+    def _project_row_to_dict(row: Any) -> dict:
+        project: Project = row[0]
+        return {
+            "id": project.id,
+            "company_id": project.company_id,
+            "name": project.name,
+            "description": project.description,
+            "source_system": project.source_system,
+            "target_system": project.target_system,
+            "status": project.status,
+            "current_step": project.current_step,
+            "created_by": project.created_by,
+            "created_by_name": row.created_by_name,
+            "updated_by": project.updated_by,
+            "updated_by_name": row.updated_by_name,
+            "created_at": project.created_at,
+            "updated_at": project.updated_at,
+        }
 
     async def update_project(self, project_id: UUID, data: ProjectUpdate, user: User | None = None) -> Project:
         project = await self.get_project(project_id)
@@ -199,7 +227,12 @@ class ProjectService:
 
     async def get_project_detail(self, project_id: UUID, user: User) -> dict:
         """Get detailed project info matching legacy response shape."""
-        project = await self.get_project(project_id)
+        row = await self.project_repo.get_by_id_with_users(project_id)
+        if not row:
+            raise NotFoundError("Project not found")
+        project: Project = row[0]
+        created_by_name: str | None = row.created_by_name
+        updated_by_name: str | None = row.updated_by_name
 
         # Get company
         company = await self.company_repo.get_by_id(project.company_id)
@@ -231,12 +264,6 @@ class ProjectService:
             stats["total"] += 1
             if m.mapping_status in stats:
                 stats[m.mapping_status] += 1
-
-        # Get created_by name
-        from src.modules.auth.models import User as UserModel
-
-        creator = await self.session.get(UserModel, project.created_by)
-        created_by_name = creator.name if creator else None
 
         return {
             "id": str(project.id),
@@ -280,6 +307,7 @@ class ProjectService:
             ],
             "mapping_count": len(mapping_list),
             "created_by_name": created_by_name,
+            "updated_by_name": updated_by_name,
             "mapping_stats": stats,
         }
 

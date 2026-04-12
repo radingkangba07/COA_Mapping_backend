@@ -49,7 +49,9 @@ class ProjectResponse(BaseModel):
     status: str
     current_step: int = 0
     created_by: uuid.UUID
+    created_by_name: str | None = None
     updated_by: uuid.UUID | None = None
+    updated_by_name: str | None = None
     created_at: datetime
     updated_at: datetime
 
