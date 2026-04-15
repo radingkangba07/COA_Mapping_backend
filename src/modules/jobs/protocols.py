@@ -1,7 +1,7 @@
 from typing import Protocol
 from uuid import UUID
 
-from src.modules.jobs.models import Job
+from coa_db_models.jobs.models import Job
 
 
 class QueueProtocol(Protocol):

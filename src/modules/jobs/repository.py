@@ -1,10 +1,10 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from coa_db_models.jobs.models import Job
 from sqlalchemy import select
 
 from src.core.base_repository import BaseRepository
-from src.modules.jobs.models import Job
 
 
 class JobRepository(BaseRepository[Job]):

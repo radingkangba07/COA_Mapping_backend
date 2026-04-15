@@ -3,10 +3,10 @@ import logging
 from uuid import UUID
 
 import pandas as pd
+from coa_db_models.mappings.models import CoaMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import NotFoundError
-from src.modules.mappings.models import CoaMapping
 from src.modules.mappings.repository import MappingRepository
 from src.modules.mappings.schemas import MappingBulkSaveResponse, MappingCreate, MappingStatsResponse, MappingUpdate
 from src.modules.projects.repository import ProjectRepository

@@ -1,20 +1,25 @@
 import logging
-import urllib.parse
+from uuid import UUID
 
+from coa_db_models.auth.models import User
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.core.config import get_settings
 from src.core.exceptions import AppError
-from src.modules.auth.dependencies import get_auth_service, get_current_user
+from src.modules.auth.dependencies import get_auth_service, get_current_user, get_invitation_service
 from src.modules.auth.email_service import _template_env
-from src.modules.auth.models import User
+from src.modules.auth.invitation_service import InvitationService
 from src.modules.auth.schemas import (
+    InvitationCreate,
+    InvitationMessageResponse,
+    InvitationResponse,
     InviteRequest,
     LogoutRequest,
     MagicLinkRequest,
     MagicLinkResponse,
     MeResponse,
+    OrgMemberResponse,
     OrgInvitationResponse,
     OrgMemberResponse,
     OrgMembership,
@@ -22,15 +27,21 @@ from src.modules.auth.schemas import (
     RegisterRequest,
     RegisterResponse,
     TokenResponse,
+    UserOrgResponse,
 )
 from src.modules.auth.service import AuthService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+router = APIRouter(prefix="/api/v1", tags=["auth"])
+users_router = APIRouter(prefix="/api/v1/users", tags=["users"])
+orgs_router = APIRouter(prefix="/api/v1/orgs", tags=["organizations"])
 
 
-@router.post("/register", response_model=RegisterResponse, status_code=201)
+# --- Auth ---
+
+
+@router.post("/auth/register", response_model=RegisterResponse, status_code=201)
 async def register(
     data: RegisterRequest,
     background_tasks: BackgroundTasks,
@@ -48,7 +59,7 @@ async def register(
         return JSONResponse(status_code=500, content={"detail": "Registration failed"})
 
 
-@router.get("/verify", response_class=HTMLResponse)
+@router.get("/auth/verify", response_class=HTMLResponse)
 async def verify_email(token: str, service: AuthService = Depends(get_auth_service)):
     try:
         result = await service.verify_email(token)
@@ -66,7 +77,7 @@ async def verify_email(token: str, service: AuthService = Depends(get_auth_servi
         return HTMLResponse(content=html)
 
 
-@router.post("/login", response_model=MagicLinkResponse)
+@router.post("/auth/login", response_model=MagicLinkResponse)
 async def login(
     data: MagicLinkRequest,
     background_tasks: BackgroundTasks,
@@ -84,7 +95,7 @@ async def login(
         return JSONResponse(status_code=500, content={"detail": "Login failed"})
 
 
-@router.get("/magic-link", response_class=HTMLResponse)
+@router.get("/auth/magic-link", response_class=HTMLResponse)
 async def magic_link(token: str = Query(...), service: AuthService = Depends(get_auth_service)):
     try:
         result = await service.verify_magic_link(token)
@@ -109,37 +120,8 @@ async def magic_link(token: str = Query(...), service: AuthService = Depends(get
         return HTMLResponse(content=html)
 
 
-@router.get("/invite", response_class=HTMLResponse)
-async def accept_invitation(token: str = Query(...), service: AuthService = Depends(get_auth_service)):
-    try:
-        result = await service.accept_invitation(token)
-        if not result["success"]:
-            html = _template_env.get_template("verify_error.html").render(error=result["error"])
-            return HTMLResponse(content=html)
 
-        settings = get_settings()
-        if result["action"] == "redirect_to_signup":
-            encoded_email = urllib.parse.quote(result["email"])
-            redirect_url = f"{settings.frontend_url}/auth/signup?invite_token={result['token']}&email={encoded_email}"
-        else:
-            redirect_url = (
-                f"{settings.frontend_url}/auth/callback"
-                f"?access_token={result['access_token']}"
-                f"&refresh_token={result['refresh_token']}"
-            )
-
-        html = f"""<!DOCTYPE html>
-<html><head><meta http-equiv="refresh" content="0;url={redirect_url}">
-<script>window.location.href="{redirect_url}";</script>
-</head><body>Redirecting...</body></html>"""
-        return HTMLResponse(content=html)
-    except Exception:
-        logger.exception("Invitation acceptance failed")
-        html = _template_env.get_template("verify_error.html").render(error="Something went wrong")
-        return HTMLResponse(content=html)
-
-
-@router.post("/refresh", response_model=TokenResponse)
+@router.post("/auth/refresh", response_model=TokenResponse)
 async def refresh(data: RefreshRequest, service: AuthService = Depends(get_auth_service)):
     try:
         return await service.refresh_tokens(refresh_token=data.refresh_token)
@@ -150,7 +132,7 @@ async def refresh(data: RefreshRequest, service: AuthService = Depends(get_auth_
         return JSONResponse(status_code=500, content={"detail": "Token refresh failed"})
 
 
-@router.post("/logout")
+@router.post("/auth/logout")
 async def logout(data: LogoutRequest, service: AuthService = Depends(get_auth_service)):
     try:
         return await service.logout(refresh_token=data.refresh_token)
@@ -161,7 +143,7 @@ async def logout(data: LogoutRequest, service: AuthService = Depends(get_auth_se
         return JSONResponse(status_code=500, content={"detail": "Logout failed"})
 
 
-@router.get("/me", response_model=MeResponse)
+@router.get("/auth/me", response_model=MeResponse)
 async def me(user: User = Depends(get_current_user), service: AuthService = Depends(get_auth_service)):
     try:
         return await service.get_me(user)
@@ -172,8 +154,134 @@ async def me(user: User = Depends(get_current_user), service: AuthService = Depe
         return JSONResponse(status_code=500, content={"detail": "Failed to get user profile"})
 
 
-users_router = APIRouter(prefix="/api/v1/users", tags=["users"])
-orgs_router = APIRouter(prefix="/api/v1/orgs", tags=["organizations"])
+# --- Invite acceptance (public, token-based) ---
+
+
+@router.get("/auth/invite", response_class=HTMLResponse)
+async def accept_invite(
+    token: str = Query(...),
+    service: InvitationService = Depends(get_invitation_service),
+):
+    try:
+        result = await service.accept_invitation(token)
+        if not result["success"]:
+            html = _template_env.get_template("verify_error.html").render(error=result["error"])
+            return HTMLResponse(content=html)
+
+        redirect_url = result["redirect_url"]
+        html = f"""<!DOCTYPE html>
+<html><head><meta http-equiv="refresh" content="0;url={redirect_url}">
+<script>window.location.href="{redirect_url}";</script>
+</head><body>Redirecting...</body></html>"""
+        return HTMLResponse(content=html)
+    except Exception:
+        logger.exception("Invite acceptance failed")
+        html = _template_env.get_template("verify_error.html").render(error="Something went wrong")
+        return HTMLResponse(content=html)
+
+
+# --- Organization Invitations ---
+
+
+@orgs_router.post(
+    "/{org_id}/invitations",
+    response_model=InvitationMessageResponse,
+    status_code=201,
+)
+async def send_invitation(
+    org_id: UUID,
+    data: InvitationCreate,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    service: InvitationService = Depends(get_invitation_service),
+):
+    try:
+        invitation = await service.send_invitation(
+            org_id=org_id,
+            email=data.email,
+            role=data.role,
+            current_user=user,
+            background_tasks=background_tasks,
+        )
+        return InvitationMessageResponse(invitation_id=invitation.id, message="Invitation sent")
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to send invitation for org %s", org_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to send invitation"})
+
+
+@orgs_router.get("/{org_id}/invitations", response_model=list[InvitationResponse])
+async def list_invitations(
+    org_id: UUID,
+    user: User = Depends(get_current_user),
+    service: InvitationService = Depends(get_invitation_service),
+):
+    try:
+        return await service.list_invitations(org_id, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to list invitations for org %s", org_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to list invitations"})
+
+
+@orgs_router.delete("/{org_id}/invitations/{invitation_id}")
+async def cancel_invitation(
+    org_id: UUID,
+    invitation_id: UUID,
+    user: User = Depends(get_current_user),
+    service: InvitationService = Depends(get_invitation_service),
+):
+    try:
+        await service.cancel_invitation(org_id, invitation_id, user)
+        return {"status": "cancelled"}
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to cancel invitation %s", invitation_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to cancel invitation"})
+
+
+# --- Organization Members ---
+
+
+@orgs_router.get("/{org_id}/members", response_model=list[OrgMemberResponse])
+async def list_org_members(
+    org_id: UUID,
+    user: User = Depends(get_current_user),
+    service: InvitationService = Depends(get_invitation_service),
+):
+    try:
+        return await service.list_org_members(org_id, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to list members for org %s", org_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to list members"})
+
+
+@orgs_router.delete("/{org_id}/members/{user_id}")
+async def remove_org_member(
+    org_id: UUID,
+    user_id: UUID,
+    user: User = Depends(get_current_user),
+    service: InvitationService = Depends(get_invitation_service),
+):
+    try:
+        await service.remove_org_member(org_id, user_id, user)
+        return {"status": "removed"}
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to remove user %s from org %s", user_id, org_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to remove member"})
+
+
+# --- User's Organizations ---
+
+
+
 
 
 @users_router.get("/me/orgs", response_model=list[OrgMembership])
@@ -190,66 +298,3 @@ async def get_my_orgs(
         return JSONResponse(status_code=500, content={"detail": "Failed to get user orgs"})
 
 
-@orgs_router.get("/{org_id}/members", response_model=list[OrgMemberResponse])
-async def get_org_members(
-    org_id: str,
-    user: User = Depends(get_current_user),
-    service: AuthService = Depends(get_auth_service),
-):
-    try:
-        return await service.get_org_members(org_id=org_id, user=user)
-    except AppError:
-        raise
-    except Exception:
-        logger.exception("Failed to get org members for org_id=%s", org_id)
-        return JSONResponse(status_code=500, content={"detail": "Failed to get org members"})
-
-
-@orgs_router.get("/{org_id}/invitations", response_model=list[OrgInvitationResponse])
-async def get_org_invitations(
-    org_id: str,
-    user: User = Depends(get_current_user),
-    service: AuthService = Depends(get_auth_service),
-):
-    try:
-        return await service.get_org_invitations(org_id=org_id, user=user)
-    except AppError:
-        raise
-    except Exception:
-        logger.exception("Failed to get org invitations for org_id=%s", org_id)
-        return JSONResponse(status_code=500, content={"detail": "Failed to get org invitations"})
-
-
-@orgs_router.post("/{org_id}/invitations", response_model=OrgInvitationResponse, status_code=status.HTTP_201_CREATED)
-async def create_org_invitation(
-    org_id: str,
-    data: InviteRequest,
-    background_tasks: BackgroundTasks,
-    user: User = Depends(get_current_user),
-    service: AuthService = Depends(get_auth_service),
-):
-    try:
-        return await service.invite_to_org(
-            org_id=org_id, email=data.email, role=data.role, user=user, background_tasks=background_tasks
-        )
-    except AppError:
-        raise
-    except Exception:
-        logger.exception("Failed to create invitation for org_id=%s", org_id)
-        return JSONResponse(status_code=500, content={"detail": "Failed to create invitation"})
-
-
-@orgs_router.delete("/{org_id}/invitations/{invitation_id}")
-async def cancel_org_invitation(
-    org_id: str,
-    invitation_id: str,
-    user: User = Depends(get_current_user),
-    service: AuthService = Depends(get_auth_service),
-):
-    try:
-        return await service.cancel_invitation(org_id=org_id, invitation_id=invitation_id, user=user)
-    except AppError:
-        raise
-    except Exception:
-        logger.exception("Failed to cancel invitation %s for org_id=%s", invitation_id, org_id)
-        return JSONResponse(status_code=500, content={"detail": "Failed to cancel invitation"})

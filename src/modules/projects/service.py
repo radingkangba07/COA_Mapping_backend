@@ -2,20 +2,19 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from coa_db_models.auth.models import Organization, User
+from coa_db_models.mappings.models import CoaMapping
+from coa_db_models.projects.models import Project, ProjectAccess
 from sqlalchemy import func, select
 
-from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
-from src.modules.auth.models import User
-from src.modules.mappings.models import CoaMapping
-from src.modules.projects.models import Company, Project, ProjectAccess
+from src.core.exceptions import ForbiddenError, NotFoundError
 from src.modules.projects.protocols import (
-    CompanyRepositoryProtocol,
     ProjectAccessRepositoryProtocol,
     ProjectRepositoryProtocol,
 )
 from src.modules.projects.schemas import (
     AccessResponse,
-    DashboardCompanyResponse,
+    DashboardOrgResponse,
     DashboardProjectResponse,
     ProjectCreate,
     ProjectUpdate,
@@ -35,18 +34,15 @@ class ProjectService:
         self,
         project_repo: ProjectRepositoryProtocol,
         access_repo: ProjectAccessRepositoryProtocol,
-        company_repo: CompanyRepositoryProtocol,
         session=None,
     ):
         self.project_repo = project_repo
         self.access_repo = access_repo
-        self.company_repo = company_repo
         self.session = session
 
     async def create_project(self, data: ProjectCreate, user: User) -> Project:
-        company = await self.company_repo.get_or_create(data.company_id, data.company_name)
         project = await self.project_repo.create_project(
-            company_id=company.id,
+            org_id=data.resolved_org_id,
             name=data.name,
             description=data.description,
             source_system=data.source_system,
@@ -90,7 +86,7 @@ class ProjectService:
         project: Project = row[0]
         return {
             "id": project.id,
-            "company_id": project.company_id,
+            "org_id": project.org_id,
             "name": project.name,
             "description": project.description,
             "source_system": project.source_system,
@@ -131,7 +127,6 @@ class ProjectService:
 
     async def grant_access(self, project_id: UUID, email: str, permission: str, granter: User) -> ProjectAccess:
         await self.get_project(project_id)
-        # Look up user by email
         from src.modules.auth.repository import UserRepository
 
         user_repo = UserRepository(self.session)
@@ -164,11 +159,10 @@ class ProjectService:
             raise ForbiddenError("Insufficient permissions")
         return access
 
-    async def get_dashboard(self, user: User) -> list[DashboardCompanyResponse]:
+    async def get_dashboard(self, user: User) -> list[DashboardOrgResponse]:
         if not self.session:
             return []
 
-        # Optimized JOIN query — no N+1
         mapping_count_subq = (
             select(func.count(CoaMapping.id))
             .where(CoaMapping.project_id == Project.id)
@@ -179,39 +173,37 @@ class ProjectService:
         result = await self.session.execute(
             select(
                 Project,
-                Company.id.label("company_uuid"),
-                Company.slug,
-                Company.name.label("company_name"),
-                Company.description.label("company_description"),
+                Organization.id.label("org_uuid"),
+                Organization.slug,
+                Organization.name.label("org_name"),
+                Organization.description.label("org_description"),
                 ProjectAccess.permission.label("user_permission"),
                 mapping_count_subq.label("mapping_count"),
             )
             .join(ProjectAccess, ProjectAccess.project_id == Project.id)
-            .join(Company, Company.id == Project.company_id)
+            .join(Organization, Organization.id == Project.org_id)
             .where(ProjectAccess.user_id == user.id)
             .order_by(Project.updated_at.desc())
         )
         rows = result.all()
 
-        # Group by company
-        companies_map: dict[UUID, DashboardCompanyResponse] = {}
+        orgs_map: dict[UUID, DashboardOrgResponse] = {}
         for row in rows:
             project = row[0]
-            company_uuid = row.company_uuid
-            if company_uuid not in companies_map:
-                companies_map[company_uuid] = DashboardCompanyResponse(
-                    id=company_uuid,
+            org_uuid = row.org_uuid
+            if org_uuid not in orgs_map:
+                orgs_map[org_uuid] = DashboardOrgResponse(
+                    id=org_uuid,
                     slug=row.slug,
-                    name=row.company_name,
-                    description=row.company_description,
+                    name=row.org_name,
+                    description=row.org_description,
                     projects=[],
                 )
 
-            # Get access list for this project
             access_rows = await self.access_repo.list_for_project(project.id)
             access_list = [AccessResponse(**a) for a in access_rows]
 
-            companies_map[company_uuid].projects.append(
+            orgs_map[org_uuid].projects.append(
                 DashboardProjectResponse(
                     id=project.id,
                     name=project.name,
@@ -230,10 +222,9 @@ class ProjectService:
                 )
             )
 
-        return list(companies_map.values())
+        return list(orgs_map.values())
 
     async def get_project_detail(self, project_id: UUID, user: User) -> dict:
-        """Get detailed project info matching legacy response shape."""
         row = await self.project_repo.get_by_id_with_users(project_id)
         if not row:
             raise NotFoundError("Project not found")
@@ -241,14 +232,11 @@ class ProjectService:
         created_by_name: str | None = row.created_by_name
         updated_by_name: str | None = row.updated_by_name
 
-        # Get company
-        company = await self.company_repo.get_by_id(project.company_id)
+        org = await self.session.get(Organization, project.org_id)
 
-        # Get user permission
         access = await self.access_repo.get_user_permission(user.id, project_id)
         user_permission = access.permission if access else "viewer"
 
-        # Get access list with user details
         access_rows = await self.access_repo.list_for_project(project_id)
         access_list = []
         for a in access_rows:
@@ -261,20 +249,23 @@ class ProjectService:
                 }
             )
 
-        # Get mappings
         mappings = await self.session.execute(select(CoaMapping).where(CoaMapping.project_id == project_id))
         mapping_list = mappings.scalars().all()
 
-        # Get mapping stats
         stats = {"total": 0, "suggested": 0, "approved": 0, "rejected": 0, "modified": 0}
         for m in mapping_list:
             stats["total"] += 1
             if m.mapping_status in stats:
                 stats[m.mapping_status] += 1
 
+        from coa_db_models.auth.models import User as UserModel
+
+        creator = await self.session.get(UserModel, project.created_by)
+        created_by_name = creator.name if creator else None
+
         return {
             "id": str(project.id),
-            "company_id": str(project.company_id),
+            "org_id": str(project.org_id),
             "name": project.name,
             "description": project.description,
             "source_system": project.source_system,
@@ -285,13 +276,13 @@ class ProjectService:
             "updated_by": str(project.updated_by) if project.updated_by else None,
             "created_at": project.created_at.isoformat(),
             "updated_at": project.updated_at.isoformat(),
-            "company": {
-                "id": str(company.id),
-                "slug": company.slug,
-                "name": company.name,
-                "description": company.description,
+            "organization": {
+                "id": str(org.id),
+                "slug": org.slug,
+                "name": org.name,
+                "description": org.description,
             }
-            if company
+            if org
             else {},
             "user_permission": user_permission,
             "access_list": access_list,
@@ -317,24 +308,3 @@ class ProjectService:
             "updated_by_name": updated_by_name,
             "mapping_stats": stats,
         }
-
-    async def create_company(self, slug: str, name: str, description: str | None = None) -> Company:
-        existing = await self.company_repo.get_by_slug(slug)
-        if existing:
-            raise ConflictError("Company slug already exists")
-        company = Company(slug=slug, name=name, description=description)
-        if self.session:
-            self.session.add(company)
-            await self.session.flush()
-            await self.session.refresh(company)
-            await self.session.commit()
-        return company
-
-    async def list_companies(self, user: User) -> list[Company]:
-        access_list = await self.access_repo.list_for_user(user.id)
-        project_ids = [a.project_id for a in access_list]
-        if not project_ids:
-            return []
-        projects = await self.project_repo.list_by_ids(project_ids)
-        company_ids = list({p.company_id for p in projects})
-        return await self.company_repo.list_by_ids(company_ids)

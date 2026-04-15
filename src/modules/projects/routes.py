@@ -2,18 +2,16 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from coa_db_models.auth.models import User
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
 
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
-from src.modules.auth.models import User
 from src.modules.projects.dependencies import get_project_service, require_project_access
 from src.modules.projects.schemas import (
     AccessGrant,
     AccessResponse,
-    CompanyCreate,
-    CompanyResponse,
     DashboardResponse,
     ProjectCreate,
     ProjectListResponse,
@@ -167,50 +165,18 @@ async def list_access(
         return JSONResponse(status_code=500, content={"detail": "Failed to list access"})
 
 
-# --- Companies ---
-
-
-@router.post("/companies", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED)
-async def create_company(
-    data: CompanyCreate,
-    user: User = Depends(get_current_user),
-    service: ProjectService = Depends(get_project_service),
-):
-    try:
-        return await service.create_company(slug=data.slug, name=data.name, description=data.description)
-    except AppError:
-        raise
-    except Exception:
-        logger.exception("Failed to create company '%s'", data.slug)
-        return JSONResponse(status_code=500, content={"detail": "Failed to create company"})
-
-
-@router.get("/companies", response_model=list[CompanyResponse])
-async def list_companies(
-    user: User = Depends(get_current_user),
-    service: ProjectService = Depends(get_project_service),
-):
-    try:
-        return await service.list_companies(user)
-    except AppError:
-        raise
-    except Exception:
-        logger.exception("Failed to list companies")
-        return JSONResponse(status_code=500, content={"detail": "Failed to list companies"})
-
-
 # --- Dashboard ---
 
 
-@router.get("/dashboard/companies", response_model=DashboardResponse)
-async def dashboard_companies(
+@router.get("/dashboard/organizations", response_model=DashboardResponse)
+async def dashboard_organizations(
     user: User = Depends(get_current_user),
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        companies = await service.get_dashboard(user)
-        total_projects = sum(len(c.projects) for c in companies)
-        return DashboardResponse(companies=companies, total_projects=total_projects)
+        orgs = await service.get_dashboard(user)
+        total_projects = sum(len(o.projects) for o in orgs)
+        return DashboardResponse(organizations=orgs, total_projects=total_projects)
     except AppError:
         raise
     except Exception:

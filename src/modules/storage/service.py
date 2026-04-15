@@ -5,11 +5,11 @@ from pathlib import Path
 from uuid import UUID
 
 import pandas as pd
+from coa_db_models.storage.models import File
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.exceptions import NotFoundError
-from src.modules.storage.models import File
 from src.modules.storage.protocols import ObjectStoreProtocol
 from src.modules.storage.repository import FileRepository
 from src.modules.storage.s3_provider import MIME_TYPES

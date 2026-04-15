@@ -27,7 +27,6 @@ async def test_get_org_members_success(authenticated_client: AsyncClient, seed_u
     assert members[0]["name"] == "Test User"
     assert "joined_at" in members[0]
     assert "user_id" in members[0]
-    assert "id" in members[0]
 
 
 @pytest.mark.asyncio

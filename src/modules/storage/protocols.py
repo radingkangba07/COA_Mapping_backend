@@ -1,7 +1,7 @@
 from typing import Protocol
 from uuid import UUID
 
-from src.modules.storage.models import File
+from coa_db_models.storage.models import File
 
 
 class ObjectStoreProtocol(Protocol):

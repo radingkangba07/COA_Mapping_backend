@@ -1,7 +1,8 @@
 from typing import Protocol
 from uuid import UUID
 
-from src.modules.mappings.models import CoaMapping
+from coa_db_models.mappings.models import CoaMapping
+
 from src.modules.mappings.schemas import MappingCreate, MappingUpdate
 
 

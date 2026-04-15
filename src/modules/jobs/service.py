@@ -1,11 +1,10 @@
 import logging
 from uuid import UUID
 
+from coa_db_models.jobs.models import Job
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import NotFoundError
-from src.core.nats_client import is_nats_available
-from src.modules.jobs.models import Job
 from src.modules.jobs.publisher import NATSPublisher
 from src.modules.jobs.repository import JobRepository
 
@@ -17,7 +16,7 @@ class JobService:
         self,
         job_repo: JobRepository,
         session: AsyncSession,
-        publisher: NATSPublisher | None = None,
+        publisher: NATSPublisher,
     ):
         self.job_repo = job_repo
         self.session = session
@@ -45,22 +44,12 @@ class JobService:
             triggered_by=triggered_by,
         )
 
-        if is_nats_available() and self.publisher:
-            await self.publisher.publish_job(job)
-            await self.job_repo.update_status(job.id, status="queued")
-        else:
-            # Sync fallback — mark as completed immediately
-            await self.job_repo.update_status(
-                job.id,
-                status="completed",
-                progress=100.0,
-                result_data={"message": "Processed synchronously (NATS unavailable)"},
-            )
-
+        await self.publisher.publish_job(job)
+        await self.job_repo.update_status(job.id, status="queued")
         await self.session.commit()
         logger.info("Job %s (%s) created for project %s", job.id, job_type, project_id)
         result = await self.job_repo.get_by_id(job.id)
-        return result  # type: ignore[return-value]
+        return result
 
     async def get_job(self, job_id: UUID) -> Job:
         job = await self.job_repo.get_by_id(job_id)

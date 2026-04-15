@@ -1,14 +1,14 @@
 from uuid import UUID
 
+from coa_db_models.auth.models import User
+from coa_db_models.projects.models import ProjectAccess
 from fastapi import Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
 from src.core.exceptions import ForbiddenError
 from src.modules.auth.dependencies import get_current_user
-from src.modules.auth.models import User
-from src.modules.projects.models import ProjectAccess
-from src.modules.projects.repository import CompanyRepository, ProjectAccessRepository, ProjectRepository
+from src.modules.projects.repository import ProjectAccessRepository, ProjectRepository
 from src.modules.projects.service import ProjectService, permission_level
 
 
@@ -16,7 +16,6 @@ def get_project_service(db: AsyncSession = Depends(get_db)) -> ProjectService:
     return ProjectService(
         project_repo=ProjectRepository(db),
         access_repo=ProjectAccessRepository(db),
-        company_repo=CompanyRepository(db),
         session=db,
     )
 

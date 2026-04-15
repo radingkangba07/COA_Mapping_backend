@@ -6,149 +6,95 @@ Backend for the Chart of Accounts Migration Platform — helps organizations mig
 
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
-- PostgreSQL 15+
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (optional, for NATS and MinIO)
+- PostgreSQL 15+ (with pgvector extension)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (required for NATS)
 
 ## Quick Start
 
-### 1. Install dependencies
+### 1. Clone the repo
+
+```bash
+git clone <repo-url>
+cd COA_Mapping_backend_V0
+```
+
+### 2. Install dependencies
 
 ```bash
 uv sync --dev
 ```
 
-### 2. Set up PostgreSQL
-
-Create the database:
+### 3. Set up PostgreSQL
 
 ```bash
 psql -U your_username -d postgres -c "CREATE DATABASE coa_migration"
+psql -U your_username -d coa_migration -c "CREATE EXTENSION IF NOT EXISTS vector"
 ```
 
-### 3. Configure environment
-
-Copy the example and update:
+### 4. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Update `DATABASE_URL` in `.env` with your PostgreSQL credentials:
+Update `.env` with your credentials:
 
 ```
 DATABASE_URL=postgresql+asyncpg://your_username@localhost:5432/coa_migration
+APP_URL=http://localhost:8001
 ```
 
-### 4. Run database migrations
+### 5. Run database migrations
+
+Migrations are managed in the [coa-db-models](https://github.com/bhavna-linkedrp/coa-db-models.) repo. Clone it and run:
 
 ```bash
+cd ../coa-db-models
 uv run alembic upgrade head
 ```
 
-This creates all tables. To generate a new migration after model changes:
-
-```bash
-uv run alembic revision --autogenerate -m "description of change"
-```
-
-### 5. Run the server
-
-```bash
-uv run uvicorn src.main:app --reload --port 8001
-```
-
-API docs available at http://localhost:8001/docs
-
-### 6. Seed demo data (optional)
-
-Populates the database with sample users, companies, projects, and mappings:
-
-```bash
-uv run python -m src.seed
-```
-
-Safe to run multiple times — skips if data already exists.
-
-## Environments
-
-The app supports multiple environments via `APP_ENV`:
-
-| APP_ENV | .env file loaded | Description |
-|---------|------------------|-------------|
-| (unset) / `development` | `.env` | Local development |
-| `testing` | `.env.testing` | Test environment |
-| `staging` | `.env.staging` | Staging server |
-| `production` | `.env.production` | Production server |
-
-Set the environment:
-
-```bash
-export APP_ENV=staging
-uv run uvicorn src.main:app --port 8001
-```
-
-## Logging
-
-Logging is configured automatically on startup via `src/core/logging.py`.
-
-- **Log level**: `DEBUG` when `DEBUG=true` in `.env`, `INFO` otherwise
-- **Format**: `timestamp | LEVEL | module | message`
-- **Output**: stdout (suitable for Docker/cloud log aggregation)
-
-All service operations (registration, login, project CRUD, file upload, job creation) and errors are logged. Logs include the environment on startup:
-
-```
-2026-04-05 10:30:00 | INFO     | src.main | Starting COA Migration API (env=development)
-2026-04-05 10:30:00 | INFO     | src.core.database | Database connected
-2026-04-05 10:30:01 | INFO     | src.modules.auth.service | Magic link sent to 'user@example.com'
-```
-
-## Optional Services
-
-These are not required to run the backend. The app works without them.
-
-### NATS (async job queue)
-
-Without NATS, jobs run synchronously (still works, just not async).
+### 6. Start NATS
 
 ```bash
 docker compose -f src/docker-compose.yml up -d nats
 ```
 
-Then update `.env`:
-
-```
-NATS_URL=nats://localhost:4222
-```
-
-### MinIO (S3-compatible file storage)
-
-Without MinIO, file upload/download won't work but all other features do.
+### 7. Run the server
 
 ```bash
-docker compose -f src/docker-compose.yml up -d minio minio-init
+uv run uvicorn src.main:app --reload --port 8001
 ```
 
-Then update `.env`:
+API docs available at http://localhost:8001/api/docs
 
-```
-S3_ENDPOINT=http://localhost:9000
-```
+## Shared Models & Migrations
 
-### Start all optional services at once
+All SQLAlchemy models and Alembic migrations live in the **coa-db-models** package, installed as a git dependency. This repo only contains application logic (schemas, services, routes).
+
+### When `coa-db-models` is updated
+
+If someone pushes changes to `coa-db-models` (new model, new column, new migration), you need to update your local install:
 
 ```bash
-docker compose -f src/docker-compose.yml up -d
+uv lock --upgrade-package coa-db-models   # fetches the latest commit
+uv sync --dev                              # installs it
 ```
+
+Then commit the updated `uv.lock` so other developers get the change too.
+
+### If you need a schema change
+
+Make it in `coa-db-models`, not here. Add the model there, generate the migration there, then update this repo's dependency with the commands above.
 
 ## Running Tests
 
 ```bash
-# Create test database first
+# Create test database (once)
 psql -U your_username -d postgres -c "CREATE DATABASE coa_migration_test"
+psql -U your_username -d coa_migration_test -c "CREATE EXTENSION IF NOT EXISTS vector"
 
 # Run all tests
-uv run pytest src/tests/ -v
+TEST_DATABASE_URL="postgresql+asyncpg://your_username@localhost:5432/coa_migration_test" uv run pytest src/tests/ -v
 
 # Run a single module
 uv run pytest src/tests/test_auth/ -v
@@ -161,27 +107,35 @@ uv run ruff check src/
 uv run ruff format src/ --check
 ```
 
+## Required Services
+
+### NATS (async job queue)
+
+The server will not start without a running NATS instance:
+
+```bash
+docker compose -f src/docker-compose.yml up -d nats
+```
+
+## Optional Services
+
+### MinIO (S3-compatible file storage)
+
+Without MinIO, file upload/download won't work but all other features do.
+
+```bash
+docker compose -f src/docker-compose.yml up -d minio minio-init
+```
+
 ## API Endpoints
 
 | Module | Endpoints | Auth Required |
 |--------|-----------|---------------|
-| Auth | `POST /register`, `POST /login`, `GET /verify`, `GET /magic-link`, `POST /refresh`, `POST /logout`, `GET /me` | No (except `/me`) |
+| Auth | `/api/v1/auth/register`, `/login`, `/verify`, `/magic-link`, `/refresh`, `/logout`, `/me` | No (except `/me`) |
+| Orgs | `/api/v1/orgs/{id}/invitations`, `/members`, `/users/me/orgs` | Yes |
 | Projects | `/api/v1/projects`, `/companies`, `/dashboard` | Yes |
 | Mappings | `/api/v1/mappings/fuzzy-match`, `/hierarchical`, `/project/{id}` | Yes |
 | ERP | `/api/v1/erp-systems`, `/sample-data/{id}` | No |
 | Storage | `/api/v1/storage/upload`, `/download/{id}`, `/project/{id}/files` | Yes |
 | Jobs | `/api/v1/jobs` | Yes |
 | Health | `GET /api/v1/health` | No |
-
-## Production Deployment (DigitalOcean)
-
-```bash
-export APP_ENV=production
-```
-
-Update `.env.production` with real credentials, then:
-
-```bash
-uv run alembic upgrade head
-uv run uvicorn src.main:app --port 8001
-```

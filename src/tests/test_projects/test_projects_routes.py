@@ -1,17 +1,18 @@
 """Integration tests for projects routes — T039."""
 
+from typing import Any
+
 import pytest
 from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_create_project_auto_admin(authenticated_client: AsyncClient):
+async def test_create_project_auto_admin(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json={
             "name": "Test Project",
-            "company_id": "test-co",
-            "company_name": "Test Company",
+            "org_id": seed_user["org_id"],
         },
     )
     assert resp.status_code == 201
@@ -29,10 +30,10 @@ async def test_create_project_auto_admin(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_project_default_erp(authenticated_client: AsyncClient):
+async def test_create_project_default_erp(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     resp = await authenticated_client.post(
         "/api/v1/projects",
-        json={"name": "No ERP Project", "company_id": "no-erp-co"},
+        json={"name": "No ERP Project", "org_id": seed_user["org_id"]},
     )
     assert resp.status_code == 201
     data = resp.json()
@@ -41,10 +42,10 @@ async def test_create_project_default_erp(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_list_projects(authenticated_client: AsyncClient):
+async def test_list_projects(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     await authenticated_client.post(
         "/api/v1/projects",
-        json={"name": "List Project", "company_id": "list-co"},
+        json={"name": "List Project", "org_id": seed_user["org_id"]},
     )
     resp = await authenticated_client.get("/api/v1/projects")
     assert resp.status_code == 200
@@ -55,10 +56,10 @@ async def test_list_projects(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_get_project(authenticated_client: AsyncClient):
+async def test_get_project(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
-        json={"name": "Get Project", "company_id": "get-co"},
+        json={"name": "Get Project", "org_id": seed_user["org_id"]},
     )
     project_id = create_resp.json()["id"]
     resp = await authenticated_client.get(f"/api/v1/projects/{project_id}")
@@ -67,10 +68,10 @@ async def test_get_project(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_update_project(authenticated_client: AsyncClient):
+async def test_update_project(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
-        json={"name": "Update Project", "company_id": "update-co"},
+        json={"name": "Update Project", "org_id": seed_user["org_id"]},
     )
     project_id = create_resp.json()["id"]
     resp = await authenticated_client.patch(
@@ -82,10 +83,10 @@ async def test_update_project(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_delete_project(authenticated_client: AsyncClient):
+async def test_delete_project(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
-        json={"name": "Delete Project", "company_id": "delete-co"},
+        json={"name": "Delete Project", "org_id": seed_user["org_id"]},
     )
     project_id = create_resp.json()["id"]
     resp = await authenticated_client.delete(f"/api/v1/projects/{project_id}")
@@ -94,27 +95,15 @@ async def test_delete_project(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_company(authenticated_client: AsyncClient):
-    resp = await authenticated_client.post(
-        "/api/v1/companies",
-        json={"slug": "new-company", "name": "New Company", "description": "A test company"},
-    )
-    assert resp.status_code == 201
-    assert resp.json()["slug"] == "new-company"
-
-
-@pytest.mark.asyncio
-async def test_dashboard(authenticated_client: AsyncClient):
-    # Create a project so dashboard has data
+async def test_dashboard(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     await authenticated_client.post(
         "/api/v1/projects",
-        json={"name": "Dashboard Project", "company_id": "dash-co", "company_name": "Dashboard Co"},
+        json={"name": "Dashboard Project", "org_id": seed_user["org_id"]},
     )
-    resp = await authenticated_client.get("/api/v1/dashboard/companies")
+    resp = await authenticated_client.get("/api/v1/dashboard/organizations")
     assert resp.status_code == 200
     data = resp.json()
-    assert "companies" in data
+    assert "organizations" in data
     assert "total_projects" in data
-    assert len(data["companies"]) >= 1
-    # Each company should have projects
-    assert all("projects" in company for company in data["companies"])
+    assert len(data["organizations"]) >= 1
+    assert all("projects" in org for org in data["organizations"])

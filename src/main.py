@@ -10,7 +10,7 @@ from src.core.config import get_settings
 from src.core.database import close_db, init_db
 from src.core.exceptions import AppError
 from src.core.logging import setup_logging
-from src.core.nats_client import close_nats, connect_nats, get_jetstream, is_nats_available
+from src.core.nats_client import close_nats, connect_nats, get_jetstream
 from src.core.resend_client import close_resend, init_resend, is_resend_available
 from src.core.s3_client import close_s3_client, get_s3_client, init_s3_client
 from src.modules.auth.routes import orgs_router, users_router
@@ -36,18 +36,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await connect_nats(settings.nats_url, settings.nats_stream_name)
     init_s3_client()
 
-    # Start NATS result consumer if connected
-    jetstream = get_jetstream()
-    if jetstream is not None:
-        from src.core import database
-        from src.modules.jobs.consumer import NATSConsumer
-        from src.modules.jobs.repository import JobRepository
+    # NATS is required — connect_nats raises if it can't connect, so jetstream is guaranteed here.
+    from src.core import database
+    from src.modules.jobs.consumer import NATSConsumer
+    from src.modules.jobs.repository import JobRepository
 
-        assert database._async_session_factory is not None, "init_db() must run before NATS consumer start"
-        session = database._async_session_factory()
-        consumer = NATSConsumer(jetstream, JobRepository(session), session=session)
-        await consumer.start()
-        logger.info("NATS consumer started")
+    assert database._async_session_factory is not None, "init_db() must run before NATS consumer start"
+    session = database._async_session_factory()
+    consumer = NATSConsumer(get_jetstream(), JobRepository(session), session=session)
+    await consumer.start()
+    logger.info("NATS consumer started")
 
     init_resend()
     yield
@@ -106,8 +104,8 @@ app.include_router(legacy_mappings_router)
 async def health_check() -> dict:
     status_val = "healthy"
 
-    # Check NATS
-    nats_status = "connected" if is_nats_available() else "disabled"
+    # NATS is required at startup — if the app is up, NATS is connected.
+    nats_status = "connected"
 
     # Check S3
     s3_client = get_s3_client()

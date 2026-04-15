@@ -1,17 +1,18 @@
 """Integration tests for mappings routes — T051."""
 
+from typing import Any
+
 import pytest
 from httpx import AsyncClient
 
 
-async def _create_project(client: AsyncClient) -> str:
+async def _create_project(client: AsyncClient, org_id: str) -> str:
     """Helper to create a project and return its ID."""
     resp = await client.post(
         "/api/v1/projects",
         json={
             "name": "Mapping Test Project",
-            "company_id": "test-mapping-co",
-            "company_name": "Test Mapping Co",
+            "org_id": org_id,
         },
     )
     assert resp.status_code == 201
@@ -19,8 +20,8 @@ async def _create_project(client: AsyncClient) -> str:
 
 
 @pytest.mark.asyncio
-async def test_bulk_save_mappings(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
+async def test_bulk_save_mappings(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     mappings = [
         {
             "source_account_name": "Sales Revenue",
@@ -44,8 +45,8 @@ async def test_bulk_save_mappings(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_bulk_save_replaces_existing(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
+async def test_bulk_save_replaces_existing(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     # First save
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
@@ -69,8 +70,8 @@ async def test_bulk_save_replaces_existing(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_list_mappings_with_filters(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
+async def test_list_mappings_with_filters(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
         json=[
@@ -90,8 +91,8 @@ async def test_list_mappings_with_filters(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_mapping_stats(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
+async def test_mapping_stats(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
         json=[
@@ -107,8 +108,8 @@ async def test_mapping_stats(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_export_mappings_excel(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
+async def test_export_mappings_excel(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
         json=[{"source_account_name": "Export", "mapping_status": "suggested", "confidence_score": 80}],
@@ -135,8 +136,8 @@ async def test_fuzzy_match_endpoint(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_hierarchical_mapping_endpoint(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
+async def test_hierarchical_mapping_endpoint(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     resp = await authenticated_client.post(
         "/api/v1/mappings/hierarchical",
         json={
@@ -148,5 +149,5 @@ async def test_hierarchical_mapping_endpoint(authenticated_client: AsyncClient):
     assert resp.status_code == 201
     data = resp.json()
     assert data["project_id"] == project_id
-    assert data["status"] == "completed"  # sync fallback
+    assert data["status"] == "queued"
     assert "job_id" in data

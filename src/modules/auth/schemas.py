@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr
@@ -53,13 +54,46 @@ class MeResponse(BaseModel):
     orgs: list[OrgMembership]
 
 
-class OrgMemberResponse(BaseModel):
+# --- Invitation schemas ---
+
+
+class InvitationCreate(BaseModel):
+    email: EmailStr
+    role: str = "member"
+
+
+class InvitationResponse(BaseModel):
     id: uuid.UUID
+    org_id: uuid.UUID
+    email: str
+    role: str
+    status: str
+    invited_at: datetime
+    expires_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class InvitationMessageResponse(BaseModel):
+    invitation_id: uuid.UUID
+    message: str
+
+
+# --- Org member schemas ---
+
+
+class OrgMemberResponse(BaseModel):
     user_id: uuid.UUID
     name: str
     email: str
     role: str
-    joined_at: str
+    joined_at: datetime
+
+
+class UserOrgResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    role: str
 
 
 class InviteRequest(BaseModel):

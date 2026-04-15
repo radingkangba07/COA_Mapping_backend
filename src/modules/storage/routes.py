@@ -4,12 +4,12 @@ import uuid as uuid_mod
 from uuid import UUID
 
 import pandas as pd
+from coa_db_models.auth.models import User
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
-from src.modules.auth.models import User
 from src.modules.projects.dependencies import require_project_access
 from src.modules.storage.dependencies import get_storage_service
 from src.modules.storage.schemas import FileListResponse, FileResponse, FileUploadResponse, SignedUrlResponse

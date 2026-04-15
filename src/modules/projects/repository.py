@@ -1,39 +1,14 @@
 from typing import Any
 from uuid import UUID
 
+from coa_db_models.auth.models import User
+from coa_db_models.projects.models import Project, ProjectAccess
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql import func
 
 from src.core.base_repository import BaseRepository
-from src.modules.auth.models import User
-from src.modules.projects.models import Company, Project, ProjectAccess
-
-
-class CompanyRepository(BaseRepository[Company]):
-    model = Company
-
-    async def get_by_slug(self, slug: str) -> Company | None:
-        result = await self.session.execute(select(Company).where(Company.slug == slug))
-        return result.scalar_one_or_none()
-
-    async def get_or_create(self, slug: str, name: str | None = None) -> Company:
-        company = await self.get_by_slug(slug)
-        if company:
-            return company
-        display_name = name or slug.replace("-", " ").title()
-        company = Company(slug=slug, name=display_name)
-        self.session.add(company)
-        await self.session.flush()
-        await self.session.refresh(company)
-        return company
-
-    async def list_by_ids(self, company_ids: list[UUID]) -> list[Company]:
-        if not company_ids:
-            return []
-        result = await self.session.execute(select(Company).where(Company.id.in_(company_ids)))
-        return list(result.scalars().all())
 
 
 class ProjectRepository(BaseRepository[Project]):
@@ -78,9 +53,9 @@ class ProjectRepository(BaseRepository[Project]):
         )
         return result.one_or_none()
 
-    async def list_by_company(self, company_id: UUID, skip: int = 0, limit: int = 50) -> list[Project]:
+    async def list_by_org(self, org_id: UUID, skip: int = 0, limit: int = 50) -> list[Project]:
         result = await self.session.execute(
-            select(Project).where(Project.company_id == company_id).offset(skip).limit(limit)
+            select(Project).where(Project.org_id == org_id).offset(skip).limit(limit)
         )
         return list(result.scalars().all())
 
@@ -148,7 +123,7 @@ class ProjectAccessRepository:
         await self.session.execute(stmt)
         await self.session.flush()
         result = await self.get_user_permission(user_id, project_id)
-        return result  # type: ignore[return-value]
+        return result
 
     async def revoke(self, user_id: UUID, project_id: UUID) -> None:
         await self.session.execute(

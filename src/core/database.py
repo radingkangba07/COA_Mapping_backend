@@ -1,8 +1,8 @@
 import logging
 from collections.abc import AsyncGenerator
 
+from coa_db_models import Base
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
 
 from src.core.config import get_settings
 
@@ -11,9 +11,7 @@ logger = logging.getLogger(__name__)
 _engine: AsyncEngine | None = None
 _async_session_factory: async_sessionmaker[AsyncSession] | None = None
 
-
-class Base(DeclarativeBase):
-    pass
+__all__ = ["Base", "close_db", "get_db", "init_db"]
 
 
 async def init_db() -> None:

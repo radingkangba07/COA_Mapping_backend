@@ -19,8 +19,15 @@ class NATSConsumer:
         self._consume_task: asyncio.Task | None = None
 
     async def start(self) -> None:
-        subject = get_settings().nats_subject_results
-        self.sub = await self.js.subscribe(subject, durable="api-result-consumer", manual_ack=True)
+        settings = get_settings()
+        subject = settings.nats_subject_results
+        durable = settings.nats_durable_consumer
+        try:
+            self.sub = await self.js.subscribe(subject, durable=durable, manual_ack=True)
+        except Exception:
+            logger.warning("Durable consumer %s already bound, deleting stale subscription", durable)
+            await self.js.delete_consumer(settings.nats_stream_name, durable)
+            self.sub = await self.js.subscribe(subject, durable=durable, manual_ack=True)
         self._consume_task = asyncio.create_task(self._consume())
         logger.info("NATS result consumer started, listening on %s", subject)
 

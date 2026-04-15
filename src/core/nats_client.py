@@ -4,6 +4,7 @@ import logging
 import nats
 from nats.js import JetStreamContext
 from nats.js.api import RetentionPolicy, StreamConfig
+from nats.js.errors import NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -13,17 +14,66 @@ _js: JetStreamContext | None = None
 MAX_RETRIES = 3
 BASE_BACKOFF_SECONDS = 1
 
+_RETENTION_BY_NAME = {
+    "workqueue": RetentionPolicy.WORK_QUEUE,
+    "limits": RetentionPolicy.LIMITS,
+    "interest": RetentionPolicy.INTEREST,
+}
+
 
 async def _nats_error_cb(e: Exception) -> None:
     logger.debug("NATS error (non-critical): %s", e)
 
 
-async def connect_nats(url: str, stream_name: str = "COA_JOBS") -> None:
-    global _nc, _js
-    if not url:
-        logger.info("NATS_URL not set, job queue disabled (sync fallback)")
+def _build_stream_config(name: str, subjects: list[str], retention_name: str, max_age_seconds: int) -> StreamConfig:
+    retention = _RETENTION_BY_NAME.get(retention_name.lower())
+    if retention is None:
+        raise ValueError(
+            f"Invalid nats_stream_retention {retention_name!r}; expected one of {sorted(_RETENTION_BY_NAME)}"
+        )
+    return StreamConfig(
+        name=name,
+        subjects=subjects,
+        retention=retention,
+        max_age=max_age_seconds,
+    )
+
+
+async def _ensure_stream(js: JetStreamContext, desired: StreamConfig) -> None:
+    """Idempotent: create the stream if missing, update if config has drifted, else leave alone."""
+    try:
+        existing = await js.stream_info(desired.name)  # type: ignore[arg-type]
+    except NotFoundError:
+        await js.add_stream(desired)
+        logger.info("NATS stream %s created", desired.name)
         return
 
+    current = existing.config
+    if (
+        list(current.subjects or []) != list(desired.subjects or [])
+        or current.retention != desired.retention
+        or current.max_age != desired.max_age
+    ):
+        await js.update_stream(desired)
+        logger.warning("NATS stream %s config drifted from code, updated in place", desired.name)
+
+
+async def connect_nats(url: str, stream_name: str) -> None:
+    global _nc, _js
+    if not url:
+        raise RuntimeError("NATS_URL is not set; NATS is required and has no fallback")
+
+    from src.core.config import get_settings
+
+    settings = get_settings()
+    desired = _build_stream_config(
+        name=stream_name,
+        subjects=settings.nats_stream_subjects,
+        retention_name=settings.nats_stream_retention,
+        max_age_seconds=settings.nats_stream_max_age_seconds,
+    )
+
+    last_exc: Exception | None = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             _nc = await nats.connect(
@@ -34,24 +84,11 @@ async def connect_nats(url: str, stream_name: str = "COA_JOBS") -> None:
                 error_cb=_nats_error_cb,
             )
             _js = _nc.jetstream()
-            # Ensure stream exists
-            from src.core.config import get_settings
-
-            settings = get_settings()
-            try:
-                await _js.find_stream_info_by_subject(settings.nats_subject_job_run)  # type: ignore[attr-defined]
-            except Exception:
-                await _js.add_stream(
-                    StreamConfig(
-                        name=stream_name,
-                        subjects=["jobs.mapping.*"],
-                        retention=RetentionPolicy.WORK_QUEUE,
-                        max_age=86400,  # 24h in seconds
-                    )
-                )
+            await _ensure_stream(_js, desired)
             logger.info("Connected to NATS at %s (stream=%s)", url, stream_name)
             return
         except Exception as exc:
+            last_exc = exc
             _nc = None
             _js = None
             if attempt < MAX_RETRIES:
@@ -64,11 +101,9 @@ async def connect_nats(url: str, stream_name: str = "COA_JOBS") -> None:
                     wait,
                 )
                 await asyncio.sleep(wait)
-            else:
-                logger.warning(
-                    "NATS connection failed after %d attempts — sync fallback",
-                    MAX_RETRIES,
-                )
+
+    logger.exception("NATS connection failed after %d attempts", MAX_RETRIES)
+    raise RuntimeError(f"Failed to connect to NATS at {url} after {MAX_RETRIES} attempts") from last_exc
 
 
 async def close_nats() -> None:
@@ -79,9 +114,7 @@ async def close_nats() -> None:
     _js = None
 
 
-def get_jetstream() -> JetStreamContext | None:
+def get_jetstream() -> JetStreamContext:
+    if _js is None:
+        raise RuntimeError("NATS JetStream is not connected; call connect_nats() first")
     return _js
-
-
-def is_nats_available() -> bool:
-    return _js is not None

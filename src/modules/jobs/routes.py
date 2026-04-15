@@ -1,12 +1,12 @@
 import logging
 from uuid import UUID
 
+from coa_db_models.auth.models import User
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
 
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
-from src.modules.auth.models import User
 from src.modules.jobs.dependencies import get_job_service
 from src.modules.jobs.schemas import JobCreate, JobResponse, JobResultResponse, JobStatusResponse
 from src.modules.jobs.service import JobService

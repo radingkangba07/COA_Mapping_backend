@@ -2,12 +2,12 @@ import io
 import logging
 from uuid import UUID
 
+from coa_db_models.auth.models import User
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
-from src.modules.auth.models import User
 from src.modules.jobs.dependencies import get_job_service
 from src.modules.jobs.service import JobService
 from src.modules.mappings.dependencies import get_mapping_service, get_matching_engine
@@ -258,7 +258,7 @@ async def hierarchical_mapping(
             input_data={
                 "source_system": project.source_system,
                 "target_system": project.target_system,
-                "company_id": str(project.company_id),
+                "org_id": str(project.org_id),
             },
         )
         return HierarchicalMappingResponse(

@@ -20,7 +20,7 @@ def _make_job(**overrides) -> SimpleNamespace:
         "status": "queued",
         "progress": 0.0,
         "input_data": {
-            "company_id": str(uuid.uuid4()),
+            "org_id": str(uuid.uuid4()),
             "source_system": "quickbooks",
             "target_system": "xero",
         },
@@ -51,7 +51,7 @@ async def test_publish_job_subject_and_payload():
     data = json.loads(payload.decode())
     assert data["job_id"] == str(job.id)
     assert data["project_id"] == str(job.project_id)
-    assert data["company_id"] == job.input_data["company_id"]
+    assert data["org_id"] == job.input_data["org_id"]
     assert data["job_type"] == "account_matching"
     assert data["source_file_id"] == str(job.source_file_id)
     assert data["target_file_id"] == str(job.target_file_id)
@@ -87,12 +87,12 @@ async def test_publish_job_no_file_ids():
     assert data["mapping_file_id"] is None
     assert data["account_type_mapping_file_id"] is None
     assert data["triggered_by"] is None
-    assert data["company_id"] == ""
+    assert data["org_id"] == ""
 
 
 @pytest.mark.asyncio
 async def test_publish_job_payload_keys():
-    """Payload contains exactly the keys Bhavna's ML service expects."""
+    """Payload contains exactly the keys the ML service expects."""
     mock_js = AsyncMock()
     publisher = NATSPublisher(mock_js)
 
@@ -103,7 +103,7 @@ async def test_publish_job_payload_keys():
     expected_keys = {
         "job_id",
         "project_id",
-        "company_id",
+        "org_id",
         "job_type",
         "source_file_id",
         "target_file_id",

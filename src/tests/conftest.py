@@ -3,11 +3,13 @@
 import os
 from collections.abc import AsyncGenerator
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from src.core import nats_client
 from src.core.config import Settings, get_settings
 from src.core.database import Base, get_db
 from src.core.security import create_access_token
@@ -57,11 +59,18 @@ async def test_client() -> AsyncGenerator[AsyncClient, None]:
 
     config_module.get_settings = get_test_settings  # type: ignore[assignment]
 
+    # NATS is required in production but tests don't run a real server.
+    # Inject a mock JetStream so get_jetstream() works and publish_job is a no-op.
+    mock_js = MagicMock()
+    mock_js.publish = AsyncMock()
+    nats_client._js = mock_js
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
     app.dependency_overrides.clear()
+    nats_client._js = None
 
     # Cleanup tables
     async with test_engine.begin() as conn:
@@ -75,6 +84,8 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     settings = get_test_settings()
     test_engine = create_async_engine(settings.database_url, echo=False)
     async with test_engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_factory() as session:
@@ -113,7 +124,18 @@ async def seed_user(test_client: AsyncClient) -> dict[str, Any]:
         # Generate real JWT access token
         access_token = create_access_token(data={"sub": str(user.id)})
 
-        return {"user_id": str(user.id), "token": access_token, "email": "testuser@example.com"}
+        # Get the org created during registration
+        from src.modules.auth.repository import OrganizationRepository
+
+        org_repo = OrganizationRepository(session)
+        org = await org_repo.get_by_name("Test Org")
+
+        return {
+            "user_id": str(user.id),
+            "token": access_token,
+            "email": "testuser@example.com",
+            "org_id": str(org.id) if org else None,
+        }
 
 
 @pytest_asyncio.fixture

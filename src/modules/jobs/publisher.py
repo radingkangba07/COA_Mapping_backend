@@ -2,10 +2,10 @@ import json
 import logging
 from datetime import UTC, datetime
 
+from coa_db_models.jobs.models import Job
 from nats.js import JetStreamContext
 
 from src.core.config import get_settings
-from src.modules.jobs.models import Job
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class NATSPublisher:
             {
                 "job_id": str(job.id),
                 "project_id": str(job.project_id),
-                "company_id": metadata.get("company_id", ""),
+                "org_id": metadata.get("org_id", ""),
                 "job_type": job.job_type,
                 "source_file_id": str(job.source_file_id) if job.source_file_id else None,
                 "target_file_id": str(job.target_file_id) if job.target_file_id else None,

@@ -1,10 +1,10 @@
 from typing import cast
 from uuid import UUID
 
+from coa_db_models.mappings.models import CoaMapping
 from sqlalchemy import CursorResult, delete, func, select, update
 
 from src.core.base_repository import BaseRepository
-from src.modules.mappings.models import CoaMapping
 from src.modules.mappings.schemas import MappingCreate
 
 

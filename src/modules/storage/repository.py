@@ -1,10 +1,10 @@
 from uuid import UUID
 
+from coa_db_models.storage.models import File
 from sqlalchemy import select
 from sqlalchemy.sql import func
 
 from src.core.base_repository import BaseRepository
-from src.modules.storage.models import File
 
 
 class FileRepository(BaseRepository[File]):
