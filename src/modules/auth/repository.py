@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.sql import func
 
 from src.core.base_repository import BaseRepository
-from src.modules.auth.models import Organization, OrganizationMember, RefreshToken, User
+from src.modules.auth.models import Organization, OrganizationInvitation, OrganizationMember, RefreshToken, User
 
 
 class UserRepository(BaseRepository[User]):
@@ -126,3 +126,78 @@ class OrganizationRepository:
             .where(OrganizationMember.user_id == user_id)
         )
         return list(result.all())
+
+    async def get_by_id(self, org_id: UUID) -> Organization | None:
+        result = await self.session.execute(select(Organization).where(Organization.id == org_id))
+        org: Organization | None = result.scalar_one_or_none()
+        return org
+
+    async def get_member(self, org_id: UUID, user_id: UUID) -> OrganizationMember | None:
+        result = await self.session.execute(
+            select(OrganizationMember).where(
+                OrganizationMember.org_id == org_id,
+                OrganizationMember.user_id == user_id,
+            )
+        )
+        member: OrganizationMember | None = result.scalar_one_or_none()
+        return member
+
+    async def get_members_for_org(self, org_id: UUID) -> list:
+        result = await self.session.execute(
+            select(OrganizationMember, User.name.label("user_name"), User.email.label("user_email"))
+            .join(User, OrganizationMember.user_id == User.id)
+            .where(OrganizationMember.org_id == org_id)
+            .order_by(OrganizationMember.joined_at)
+        )
+        return list(result.all())
+
+    async def get_pending_invitation(self, org_id: UUID, email: str) -> OrganizationInvitation | None:
+        result = await self.session.execute(
+            select(OrganizationInvitation).where(
+                OrganizationInvitation.org_id == org_id,
+                OrganizationInvitation.email == email,
+                OrganizationInvitation.status == "pending",
+            )
+        )
+        invitation: OrganizationInvitation | None = result.scalar_one_or_none()
+        return invitation
+
+    async def create_invitation(
+        self, org_id: UUID, email: str, role: str, token: str, invited_by: UUID, expires_at
+    ) -> OrganizationInvitation:
+        invitation = OrganizationInvitation(
+            org_id=org_id, email=email, role=role, token=token, invited_by=invited_by, expires_at=expires_at
+        )
+        self.session.add(invitation)
+        await self.session.flush()
+        await self.session.refresh(invitation)
+        return invitation
+
+    async def get_invitations_for_org(self, org_id: UUID) -> list[OrganizationInvitation]:
+        result = await self.session.execute(
+            select(OrganizationInvitation)
+            .where(OrganizationInvitation.org_id == org_id)
+            .order_by(OrganizationInvitation.invited_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_invitation_by_token(self, token: str) -> OrganizationInvitation | None:
+        result = await self.session.execute(select(OrganizationInvitation).where(OrganizationInvitation.token == token))
+        invitation: OrganizationInvitation | None = result.scalar_one_or_none()
+        return invitation
+
+    async def get_invitation_by_id(self, invitation_id: UUID) -> OrganizationInvitation | None:
+        result = await self.session.execute(
+            select(OrganizationInvitation).where(OrganizationInvitation.id == invitation_id)
+        )
+        invitation: OrganizationInvitation | None = result.scalar_one_or_none()
+        return invitation
+
+    async def delete_invitation(self, invitation_id: UUID) -> None:
+        result = await self.session.execute(
+            select(OrganizationInvitation).where(OrganizationInvitation.id == invitation_id)
+        )
+        obj = result.scalar_one_or_none()
+        if obj:
+            await self.session.delete(obj)
+            await self.session.flush()

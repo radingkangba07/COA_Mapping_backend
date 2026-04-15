@@ -51,6 +51,22 @@ class OrganizationMember(Base):
     __table_args__ = (UniqueConstraint("user_id", "org_id"),)
 
 
+class OrganizationInvitation(Base):
+    __tablename__ = "organization_invitations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(50), nullable=False, server_default="member")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="pending")
+    token: Mapped[str] = mapped_column(String(500), unique=True, nullable=False)
+    invited_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    invited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (UniqueConstraint("org_id", "email", name="uq_org_invitation_email"),)
+
+
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 

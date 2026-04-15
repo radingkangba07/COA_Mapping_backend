@@ -266,6 +266,214 @@ class AuthService:
         memberships = await self.org_repo.get_memberships_for_user(user.id)
         return [{"id": member.org_id, "name": org_name, "role": member.role} for member, org_name in memberships]
 
+    async def get_org_members(self, org_id, user: User) -> list[dict]:
+        """Return members of an organization (caller must be a member)."""
+        from uuid import UUID as _UUID
+
+        if isinstance(org_id, str):
+            org_id = _UUID(org_id)
+
+        org = await self.org_repo.get_by_id(org_id)
+        if not org:
+            raise NotFoundError("Organization not found")
+
+        membership = await self.org_repo.get_member(org_id, user.id)
+        if not membership:
+            raise ForbiddenError("You are not a member of this organization")
+
+        members = await self.org_repo.get_members_for_org(org_id)
+        return [
+            {
+                "id": member.id,
+                "user_id": member.user_id,
+                "name": user_name,
+                "email": user_email,
+                "role": member.role,
+                "joined_at": member.joined_at.isoformat(),
+            }
+            for member, user_name, user_email in members
+        ]
+
+    async def invite_to_org(self, org_id, email: str, role: str, user: User, background_tasks=None) -> dict:
+        """Invite a user to an organization by email."""
+        from uuid import UUID as _UUID
+
+        if isinstance(org_id, str):
+            org_id = _UUID(org_id)
+
+        org = await self.org_repo.get_by_id(org_id)
+        if not org:
+            raise NotFoundError("Organization not found")
+
+        membership = await self.org_repo.get_member(org_id, user.id)
+        if not membership:
+            raise ForbiddenError("You are not a member of this organization")
+        if membership.role not in ("owner", "admin"):
+            raise ForbiddenError("Only owners and admins can invite members")
+
+        # Check if already a member
+        existing_user = await self.user_repo.get_by_email(email)
+        if existing_user:
+            existing_member = await self.org_repo.get_member(org_id, existing_user.id)
+            if existing_member:
+                raise ConflictError("User is already a member of this organization")
+
+        # Check for existing pending invitation
+        existing_invite = await self.org_repo.get_pending_invitation(org_id, email)
+        if existing_invite:
+            raise ConflictError("A pending invitation already exists for this email")
+
+        # Create invitation token (7-day expiry)
+        token = create_access_token(
+            data={"sub": email, "org_id": str(org_id), "purpose": "org_invitation"},
+            expires_delta=timedelta(days=7),
+        )
+        expires_at = datetime.now(UTC) + timedelta(days=7)
+
+        invitation = await self.org_repo.create_invitation(
+            org_id=org_id, email=email, role=role, token=token, invited_by=user.id, expires_at=expires_at
+        )
+        await self.session.commit()
+
+        # Send invitation email in background
+        if self.email_service and background_tasks:
+            background_tasks.add_task(
+                self.email_service.send_invite_email,
+                to=email,
+                inviter_name=user.name,
+                org_name=org.name,
+                token=token,
+            )
+
+        logger.info("Invitation sent to '%s' for org '%s' by user %s", email, org.name, user.id)
+        return {
+            "id": invitation.id,
+            "email": invitation.email,
+            "role": invitation.role,
+            "status": invitation.status,
+            "invited_at": invitation.invited_at.isoformat(),
+        }
+
+    async def get_org_invitations(self, org_id, user: User) -> list[dict]:
+        """Return invitations for an organization (caller must be a member)."""
+        from uuid import UUID as _UUID
+
+        if isinstance(org_id, str):
+            org_id = _UUID(org_id)
+
+        org = await self.org_repo.get_by_id(org_id)
+        if not org:
+            raise NotFoundError("Organization not found")
+
+        membership = await self.org_repo.get_member(org_id, user.id)
+        if not membership:
+            raise ForbiddenError("You are not a member of this organization")
+
+        invitations = await self.org_repo.get_invitations_for_org(org_id)
+        return [
+            {
+                "id": inv.id,
+                "email": inv.email,
+                "role": inv.role,
+                "status": inv.status,
+                "invited_at": inv.invited_at.isoformat(),
+            }
+            for inv in invitations
+        ]
+
+    async def accept_invitation(self, token: str) -> dict:
+        """Validate an org invitation token and add the user as a member."""
+        try:
+            payload = decode_token(token)
+        except InvalidTokenError:
+            logger.warning("Invitation acceptance failed: invalid or expired token")
+            return {"success": False, "error": "Invalid or expired invitation link"}
+
+        if payload.get("purpose") != "org_invitation":
+            logger.warning("Invitation acceptance failed: wrong token purpose")
+            return {"success": False, "error": "Invalid invitation link"}
+
+        from uuid import UUID as _UUID
+
+        email = payload.get("sub")
+        org_id_str = payload.get("org_id")
+        if not email or not org_id_str:
+            logger.warning("Invitation acceptance failed: missing claims in token")
+            return {"success": False, "error": "Invalid invitation link"}
+
+        org_id = _UUID(org_id_str)
+
+        invitation = await self.org_repo.get_invitation_by_token(token)
+        if not invitation or invitation.status != "pending":
+            logger.warning("Invitation acceptance failed: invitation not found or not pending for email '%s'", email)
+            return {"success": False, "error": "Invitation not found or already used"}
+
+        if invitation.expires_at < datetime.now(UTC):
+            logger.warning("Invitation acceptance failed: invitation expired for email '%s'", email)
+            return {"success": False, "error": "Invitation has expired"}
+
+        user = await self.user_repo.get_by_email(email)
+        if not user:
+            logger.info("Invitation: no account for '%s', redirecting to signup", email)
+            return {"success": True, "action": "redirect_to_signup", "email": email, "token": token}
+
+        existing_member = await self.org_repo.get_member(org_id, user.id)
+        if existing_member:
+            logger.warning("Invitation acceptance failed: user '%s' already a member of org %s", email, org_id)
+            return {"success": False, "error": "You are already a member of this organization"}
+
+        await self.org_repo.create_member(user_id=user.id, org_id=org_id, role=invitation.role)
+        invitation.status = "accepted"
+        await self.session.flush()
+
+        await self.user_repo.update_last_login(user.id)
+        access_token = create_access_token(data={"sub": str(user.id)})
+        refresh_token = create_refresh_token(data={"sub": str(user.id)})
+        settings = get_settings()
+        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+        expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
+        await self.refresh_token_repo.create(user_id=user.id, token_hash=token_hash, expires_at=expires_at)
+
+        await self.session.commit()
+        logger.info("User '%s' accepted invitation to org %s", email, org_id)
+        return {
+            "success": True,
+            "action": "accepted",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+        }
+
+    async def cancel_invitation(self, org_id, invitation_id, user: User) -> dict:
+        """Cancel (hard-delete) a pending org invitation."""
+        from uuid import UUID as _UUID
+
+        if isinstance(org_id, str):
+            org_id = _UUID(org_id)
+        if isinstance(invitation_id, str):
+            invitation_id = _UUID(invitation_id)
+
+        org = await self.org_repo.get_by_id(org_id)
+        if not org:
+            raise NotFoundError("Organization not found")
+
+        membership = await self.org_repo.get_member(org_id, user.id)
+        if not membership:
+            raise ForbiddenError("You are not a member of this organization")
+        if membership.role not in ("owner", "admin"):
+            raise ForbiddenError("Only owners and admins can cancel invitations")
+
+        invitation = await self.org_repo.get_invitation_by_id(invitation_id)
+        if not invitation or invitation.org_id != org_id:
+            raise NotFoundError("Invitation not found")
+        if invitation.status != "pending":
+            raise ConflictError("Only pending invitations can be cancelled")
+
+        await self.session.delete(invitation)
+        await self.session.flush()
+        await self.session.commit()
+        logger.info("Invitation %s cancelled by user %s", invitation_id, user.id)
+        return {"status": "cancelled"}
+
     async def get_me(self, user: User) -> dict:
         """Return user profile with org memberships."""
         orgs = await self.get_user_orgs(user)

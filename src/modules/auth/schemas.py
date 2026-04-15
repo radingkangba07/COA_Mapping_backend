@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr
 
@@ -50,3 +51,25 @@ class MeResponse(BaseModel):
     email: str
     is_verified: bool
     orgs: list[OrgMembership]
+
+
+class OrgMemberResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    name: str
+    email: str
+    role: str
+    joined_at: str
+
+
+class InviteRequest(BaseModel):
+    email: EmailStr
+    role: Literal["member", "admin"] = "member"
+
+
+class OrgInvitationResponse(BaseModel):
+    id: uuid.UUID
+    email: str
+    role: str
+    status: str
+    invited_at: str
