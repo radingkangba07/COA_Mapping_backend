@@ -422,6 +422,9 @@ class AuthService:
             logger.warning("Invitation acceptance failed: user '%s' already a member of org %s", email, org_id)
             return {"success": False, "error": "You are already a member of this organization"}
 
+        if not user.is_verified:
+            await self.user_repo.verify_user(user.id)
+
         await self.org_repo.create_member(user_id=user.id, org_id=org_id, role=invitation.role)
         invitation.status = "accepted"
         await self.session.flush()
