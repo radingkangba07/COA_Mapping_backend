@@ -4,13 +4,13 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: coa_user
-      POSTGRES_PASSWORD: coa_pass
-      POSTGRES_DB: coa_migration
+      POSTGRES_USER: ${POSTGRES_USER:-coa_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-coa_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-coa_migration}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U coa_user -d coa_migration"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-coa_user} -d ${POSTGRES_DB:-coa_migration}"]
       interval: 10s
       timeout: 5s
       retries: 5
