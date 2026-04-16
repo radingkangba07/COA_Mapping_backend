@@ -48,13 +48,14 @@ jobs:
           # only — forks cannot access secrets, so this wouldn't run for them
           # anyway). For workflow_dispatch it falls back to `develop`.
           BE_REF: ${{ github.event.pull_request.head.ref || 'develop' }}
+          GH_PAT: ${{ secrets.GH_PAT_COA_DB_MODELS }}
         with:
           host: ${{ secrets.TESTING_SSH_HOST }}
           username: ${{ secrets.TESTING_SSH_USER }}
           key: ${{ secrets.TESTING_SSH_KEY }}
           # port defaults to 22 — set secrets.TESTING_SSH_PORT and wire it
           # here if the testing host listens on a non-standard port.
-          envs: BE_REF
+          envs: BE_REF,GH_PAT
           command_timeout: 15m
           script: |
             set -euo pipefail
@@ -64,4 +65,4 @@ jobs:
             git fetch origin
             git reset --hard "origin/${BE_REF}"
             # invoke via `bash` so file mode in git index doesn't matter
-            BE_REF="${BE_REF}" bash scripts/deploy.sh testing backend
+            GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" bash scripts/deploy.sh testing backend

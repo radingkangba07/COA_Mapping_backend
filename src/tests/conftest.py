@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.core import nats_client
@@ -41,8 +42,10 @@ async def test_client() -> AsyncGenerator[AsyncClient, None]:
     settings = get_test_settings()
     test_engine = create_async_engine(settings.database_url, echo=False)
 
-    # Create all tables
+    # Drop existing tables (may be stale from alembic) and recreate from models
     async with test_engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
     test_session_factory = async_sessionmaker(test_engine, expire_on_commit=False)

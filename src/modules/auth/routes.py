@@ -2,7 +2,7 @@ import logging
 from uuid import UUID
 
 from coa_db_models.auth.models import User
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.core.config import get_settings
@@ -14,20 +14,16 @@ from src.modules.auth.schemas import (
     InvitationCreate,
     InvitationMessageResponse,
     InvitationResponse,
-    InviteRequest,
     LogoutRequest,
     MagicLinkRequest,
     MagicLinkResponse,
     MeResponse,
-    OrgMemberResponse,
-    OrgInvitationResponse,
     OrgMemberResponse,
     OrgMembership,
     RefreshRequest,
     RegisterRequest,
     RegisterResponse,
     TokenResponse,
-    UserOrgResponse,
 )
 from src.modules.auth.service import AuthService
 
@@ -118,7 +114,6 @@ async def magic_link(token: str = Query(...), service: AuthService = Depends(get
         logger.exception("Magic link verification failed")
         html = _template_env.get_template("verify_error.html").render(error="Something went wrong")
         return HTMLResponse(content=html)
-
 
 
 @router.post("/auth/refresh", response_model=TokenResponse)
@@ -281,9 +276,6 @@ async def remove_org_member(
 # --- User's Organizations ---
 
 
-
-
-
 @users_router.get("/me/orgs", response_model=list[OrgMembership])
 async def get_my_orgs(
     user: User = Depends(get_current_user),
@@ -296,5 +288,3 @@ async def get_my_orgs(
     except Exception:
         logger.exception("Failed to get user orgs")
         return JSONResponse(status_code=500, content={"detail": "Failed to get user orgs"})
-
-

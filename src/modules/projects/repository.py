@@ -54,9 +54,7 @@ class ProjectRepository(BaseRepository[Project]):
         return result.one_or_none()
 
     async def list_by_org(self, org_id: UUID, skip: int = 0, limit: int = 50) -> list[Project]:
-        result = await self.session.execute(
-            select(Project).where(Project.org_id == org_id).offset(skip).limit(limit)
-        )
+        result = await self.session.execute(select(Project).where(Project.org_id == org_id).offset(skip).limit(limit))
         return list(result.scalars().all())
 
     async def create_project(self, **kwargs) -> Project:

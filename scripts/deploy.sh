@@ -92,12 +92,25 @@ deploy_backend() {
     git reset --hard origin/${BE_REF}
     cd ${ENV_DIR}
 
+    # Read GitHub token for private git dependencies.
+    # Token file is maintained on the host at: <env_dir>/.gh_pat
+    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+        GH_PAT_FILE="${ENV_DIR}/.gh_pat"
+        if [[ -f "${GH_PAT_FILE}" ]]; then
+            GITHUB_TOKEN=$(cat "${GH_PAT_FILE}")
+            echo "[${ENV}/Backend] Loaded GitHub token from ${GH_PAT_FILE} (${#GITHUB_TOKEN} chars)"
+        else
+            echo "WARNING: No GITHUB_TOKEN set and ${GH_PAT_FILE} not found."
+            echo "Private git dependencies will fail to install."
+        fi
+    else
+        echo "[${ENV}/Backend] Using GITHUB_TOKEN from environment (${#GITHUB_TOKEN} chars)"
+    fi
+
     echo "[${ENV}/Backend] Rebuilding api-service..."
-    dc build --no-cache api-service
+    dc build --no-cache --build-arg GITHUB_TOKEN="${GITHUB_TOKEN}" api-service
     dc up -d api-service
 
-    echo "[${ENV}/Backend] Applying database migrations..."
-    dc exec -T api-service uv run alembic upgrade head
     echo "[${ENV}/Backend] Done."
 }
 

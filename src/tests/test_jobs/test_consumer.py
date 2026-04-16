@@ -68,7 +68,7 @@ async def test_handle_failed_result():
 
 @pytest.mark.asyncio
 async def test_handle_running_result():
-    """Consumer maps Bhavna's 'running' status to 'processing'."""
+    """Consumer maps 'running' status to 'processing'."""
     mock_js = AsyncMock()
     mock_repo = AsyncMock()
     consumer = NATSConsumer(mock_js, mock_repo)

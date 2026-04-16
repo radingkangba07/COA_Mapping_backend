@@ -4,13 +4,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (cached layer)
+ARG GITHUB_TOKEN
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" && \
+    uv sync --frozen --no-dev && \
+    git config --global --unset-all url."https://${GITHUB_TOKEN}@github.com/".insteadOf
 
 # Copy application code
 COPY src/ ./src/
-COPY alembic.ini ./alembic.ini
 
 EXPOSE 8001
 

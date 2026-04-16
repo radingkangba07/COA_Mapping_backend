@@ -177,21 +177,6 @@ class OrganizationRepository:
         )
         return list(result.all())
 
-    async def get_by_id(self, org_id: UUID) -> Organization | None:
-        result = await self.session.execute(select(Organization).where(Organization.id == org_id))
-        org: Organization | None = result.scalar_one_or_none()
-        return org
-
-    async def get_member(self, org_id: UUID, user_id: UUID) -> OrganizationMember | None:
-        result = await self.session.execute(
-            select(OrganizationMember).where(
-                OrganizationMember.org_id == org_id,
-                OrganizationMember.user_id == user_id,
-            )
-        )
-        member: OrganizationMember | None = result.scalar_one_or_none()
-        return member
-
     async def get_members_for_org(self, org_id: UUID) -> list:
         result = await self.session.execute(
             select(OrganizationMember, User.name.label("user_name"), User.email.label("user_email"))
@@ -274,9 +259,7 @@ class InvitationRepository:
         return invitation
 
     async def get_by_token(self, token: str) -> OrganizationInvitation | None:
-        result = await self.session.execute(
-            select(OrganizationInvitation).where(OrganizationInvitation.token == token)
-        )
+        result = await self.session.execute(select(OrganizationInvitation).where(OrganizationInvitation.token == token))
         return result.scalar_one_or_none()
 
     async def get_pending_by_email_and_org(self, email: str, org_id: UUID) -> OrganizationInvitation | None:

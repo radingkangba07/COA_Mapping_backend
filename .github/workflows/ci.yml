@@ -7,7 +7,6 @@ on:
       - "src/**"
       - "pyproject.toml"
       - "uv.lock"
-      - "alembic.ini"
       - ".github/workflows/ci.yml"
   push:
     branches: [main]
@@ -38,6 +37,7 @@ jobs:
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest
+    environment: testing
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +49,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Debug secret availability
+        run: |
+          if [ -z "${{ secrets.GH_PAT_COA_DB_MODELS }}" ]; then
+            echo "::error::GH_PAT_COA_DB_MODELS secret is EMPTY"
+            exit 1
+          else
+            echo "GH_PAT_COA_DB_MODELS is set (length: ${#TOKEN})"
+          fi
+        env:
+          TOKEN: ${{ secrets.GH_PAT_COA_DB_MODELS }}
+
+      - name: Configure git for private dependencies
+        run: git config --global url."https://${{ secrets.GH_PAT_COA_DB_MODELS }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install dependencies
         run: uv sync --dev
@@ -66,9 +80,10 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    environment: testing
     services:
       postgres:
-        image: postgres:15-alpine
+        image: pgvector/pgvector:pg15
         env:
           POSTGRES_USER: coa_user
           POSTGRES_PASSWORD: coa_pass
@@ -93,11 +108,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Configure git for private dependencies
+        run: git config --global url."https://${{ secrets.GH_PAT_COA_DB_MODELS }}@github.com/".insteadOf "https://github.com/"
+
       - name: Install dependencies
         run: uv sync --dev
-
-      - name: Run Alembic migrations
-        run: uv run alembic upgrade head
 
       - name: Run tests
         run: uv run pytest src/tests/ -v --tb=short --junitxml=test-results.xml -x
@@ -109,48 +124,3 @@ jobs:
           name: test-results
           path: test-results.xml
 
-  # ── Migration Check (verify migrations are up to date) ────────────────────
-  migration-check:
-    name: Migration Check
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: coa_user
-          POSTGRES_PASSWORD: coa_pass
-          POSTGRES_DB: coa_migration_check
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U coa_user -d coa_migration_check"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: "postgresql+asyncpg://coa_user:coa_pass@localhost:5432/coa_migration_check"
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: uv sync --dev
-
-      - name: Apply migrations
-        run: uv run alembic upgrade head
-
-      - name: Check for unapplied model changes
-        run: |
-          uv run alembic check 2>&1 || {
-            echo "::error::Models have changes not captured in migrations. Run: alembic revision --autogenerate -m 'description'"
-            exit 1
-          }

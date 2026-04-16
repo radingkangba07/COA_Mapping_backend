@@ -24,15 +24,15 @@ class StorageService:
         self.session = session
 
     def _build_storage_path(
-        self, company_slug: str, project_id: UUID, filename: str, file_type: str, job_id: UUID | None = None
+        self, org_slug: str, project_id: UUID, filename: str, file_type: str, job_id: UUID | None = None
     ) -> str:
         settings = get_settings()
         ext = Path(filename).suffix
         unique_name = f"{uuid_mod.uuid4()}{ext}"
         if job_id:
-            return f"{settings.app_name}/company/{company_slug}/project/{project_id}/jobs/{job_id}/{unique_name}"
+            return f"{settings.app_name}/org/{org_slug}/project/{project_id}/jobs/{job_id}/{unique_name}"
         folder = "artifacts" if file_type == "artifact" else "uploads"
-        return f"{settings.app_name}/company/{company_slug}/project/{project_id}/{folder}/{unique_name}"
+        return f"{settings.app_name}/org/{org_slug}/project/{project_id}/{folder}/{unique_name}"
 
     def _detect_content_type(self, filename: str) -> str:
         ext = Path(filename).suffix.lower()
@@ -44,12 +44,12 @@ class StorageService:
         filename: str,
         project_id: UUID,
         file_type: str,
-        company_slug: str = "default",
+        org_slug: str = "default",
         uploaded_by: UUID | None = None,
         job_id: UUID | None = None,
     ) -> File:
         content_type = self._detect_content_type(filename)
-        storage_path = self._build_storage_path(company_slug, project_id, filename, file_type, job_id)
+        storage_path = self._build_storage_path(org_slug, project_id, filename, file_type, job_id)
 
         # Upload to S3
         if self.store:
