@@ -41,7 +41,7 @@ class JobRepository(BaseRepository[Job]):
         if not job:
             return None
         job.status = status
-        if status == "processing" and not job.started_at:
+        if status == "running" and not job.started_at:
             job.started_at = datetime.now(UTC)
         if status in ("completed", "failed"):
             job.completed_at = datetime.now(UTC)

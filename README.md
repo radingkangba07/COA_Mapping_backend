@@ -134,8 +134,55 @@ docker compose -f src/docker-compose.yml up -d minio minio-init
 | Auth | `/api/v1/auth/register`, `/login`, `/verify`, `/magic-link`, `/refresh`, `/logout`, `/me` | No (except `/me`) |
 | Orgs | `/api/v1/orgs/{id}/invitations`, `/members`, `/users/me/orgs` | Yes |
 | Projects | `/api/v1/projects`, `/companies`, `/dashboard` | Yes |
-| Mappings | `/api/v1/mappings/fuzzy-match`, `/hierarchical`, `/project/{id}` | Yes |
+| Mappings | `/api/v1/mappings/project/{id}`, `/fuzzy-match`, `/hierarchical` | Yes |
+| Account Type Mappings | `/api/v1/mappings/project/{id}/account-type-mappings` | Yes |
+| Mapping Suggestions | `/api/v1/mappings/project/{id}/suggestions` | Yes |
 | ERP | `/api/v1/erp-systems`, `/sample-data/{id}` | No |
 | Storage | `/api/v1/storage/upload`, `/download/{id}`, `/project/{id}/files` | Yes |
 | Jobs | `/api/v1/jobs` | Yes |
+| WebSocket | `/api/v1/ws/jobs/project/{id}?token=<jwt>` | Yes (JWT via query) |
 | Health | `GET /api/v1/health` | No |
+
+## Real-time updates via WebSocket
+
+Project-scoped WebSocket for live job status`.
+
+### Endpoint
+
+```
+ws://localhost:8001/api/v1/ws/jobs/project/{project_id}?token=<jwt>
+```
+
+JWT is passed as a query param because browsers can't set headers on `WebSocket`. Close codes:
+
+| Code | Meaning |
+|------|---------|
+| 4401 | No token / invalid / expired |
+| 4403 | Valid token, no access to project |
+| 1000 | Normal close |
+| 1006 | Network drop — reconnect |
+
+### Message format (server → client)
+
+Server broadcasts the **raw NATS status message** (`jobs.mapping.status`) from the ML worker, unchanged:
+
+```json
+{
+  "job_id": "uuid",
+  "project_id": "uuid | null",
+  "company_id": "string | null",
+  "job_type": "mapping",
+  "status": "queued | running | completed | failed",
+  "source_file_id": "uuid | null",
+  "target_file_id": "uuid | null",
+  "mapping_file_id": "uuid | null",
+  "account_type_mapping_file_id": "uuid | null",
+  "triggered_by": "uuid | null",
+  "created_at": "ISO-8601 | null",
+  "started_at": "ISO-8601 | null",
+  "completed_at": "ISO-8601 | null",
+  "event_at": "ISO-8601 | null",
+  "error_message": "string | null",
+  "metadata": { "source_system": "string | null", "target_system": "string | null" }
+}
+```

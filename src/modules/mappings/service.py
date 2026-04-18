@@ -1,5 +1,6 @@
 import io
 import logging
+from collections import defaultdict
 from uuid import UUID
 
 import pandas as pd
@@ -44,6 +45,44 @@ class MappingService:
         limit: int = 50,
     ) -> list[CoaMapping]:
         return await self.mapping_repo.list_by_project(project_id, status, source_type, skip, limit)
+
+    async def list_mappings_grouped(
+        self,
+        project_id: UUID,
+        status: str | None = None,
+        source_type: str | None = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> list[dict]:
+        flat_mappings = await self.mapping_repo.list_by_project(project_id, status, source_type, skip, limit)
+
+        groups: dict[tuple, list] = defaultdict(list)
+        group_scores: dict[tuple, list[float]] = defaultdict(list)
+
+        for m in flat_mappings:
+            key = (m.source_account_type or "", m.target_account_type or "")
+            score = m.confidence_score
+            groups[key].append(
+                {
+                    "source_number": m.source_account_number or "",
+                    "source_name": m.source_account_name,
+                    "target_name": m.target_account_name or "",
+                    "score": score,
+                    "remark": m.mapping_source,
+                    "status": m.mapping_status,
+                }
+            )
+            group_scores[key].append(score)
+
+        return [
+            {
+                "source_type": source_type_val,
+                "target_type": target_type_val,
+                "confidence": round(sum(scores) / len(scores), 1) if scores else 0,
+                "accounts": groups[(source_type_val, target_type_val)],
+            }
+            for (source_type_val, target_type_val), scores in group_scores.items()
+        ]
 
     async def update_mapping(self, mapping_id: UUID, data: MappingUpdate) -> CoaMapping:
         mapping = await self.mapping_repo.get_by_id(mapping_id)

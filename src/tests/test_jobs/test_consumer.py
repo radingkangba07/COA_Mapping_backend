@@ -27,7 +27,6 @@ async def test_handle_completed_result():
         {
             "job_id": job_id,
             "status": "completed",
-            "progress": 100.0,
             "result_data": {"mapping_count": 42},
         }
     )
@@ -35,7 +34,6 @@ async def test_handle_completed_result():
     mock_repo.update_status.assert_called_once_with(
         job_id=uuid.UUID(job_id),
         status="completed",
-        progress=100.0,
         result_data={"mapping_count": 42},
         error_message=None,
     )
@@ -60,7 +58,6 @@ async def test_handle_failed_result():
     mock_repo.update_status.assert_called_once_with(
         job_id=uuid.UUID(job_id),
         status="failed",
-        progress=0.0,
         result_data=None,
         error_message="File not found in R2",
     )
@@ -68,7 +65,7 @@ async def test_handle_failed_result():
 
 @pytest.mark.asyncio
 async def test_handle_running_result():
-    """Consumer maps 'running' status to 'processing'."""
+    """Consumer writes NATS status through as-is (no remapping)."""
     mock_js = AsyncMock()
     mock_repo = AsyncMock()
     consumer = NATSConsumer(mock_js, mock_repo)
@@ -78,38 +75,12 @@ async def test_handle_running_result():
         {
             "job_id": job_id,
             "status": "running",
-            "progress": 45.0,
-            "message": "Matching accounts...",
         }
     )
 
     mock_repo.update_status.assert_called_once_with(
         job_id=uuid.UUID(job_id),
-        status="processing",
-        progress=45.0,
-        message="Matching accounts...",
-    )
-
-
-@pytest.mark.asyncio
-async def test_handle_result_defaults():
-    """Missing progress/result_data use defaults."""
-    mock_js = AsyncMock()
-    mock_repo = AsyncMock()
-    consumer = NATSConsumer(mock_js, mock_repo)
-
-    job_id = str(uuid.uuid4())
-    await consumer._handle_result(
-        {
-            "job_id": job_id,
-            "status": "completed",
-        }
-    )
-
-    mock_repo.update_status.assert_called_once_with(
-        job_id=uuid.UUID(job_id),
-        status="completed",
-        progress=100.0,
+        status="running",
         result_data=None,
         error_message=None,
     )

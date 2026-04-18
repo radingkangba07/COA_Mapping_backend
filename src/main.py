@@ -18,11 +18,14 @@ from src.modules.auth.routes import router as auth_router
 from src.modules.erp.routes import legacy_erp_router
 from src.modules.erp.routes import router as erp_router
 from src.modules.jobs.routes import router as jobs_router
+from src.modules.mappings.account_types.routes import router as account_types_router
 from src.modules.mappings.routes import legacy_mappings_router
 from src.modules.mappings.routes import router as mappings_router
+from src.modules.mappings.suggestions.routes import router as suggestions_router
 from src.modules.projects.routes import router as projects_router
 from src.modules.storage.routes import files_router
 from src.modules.storage.routes import router as storage_router
+from src.modules.websocket.routes import router as websocket_router
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +46,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     assert database._async_session_factory is not None, "init_db() must run before NATS consumer start"
     session = database._async_session_factory()
-    consumer = NATSConsumer(get_jetstream(), JobRepository(session), session=session)
+    from src.modules.websocket.connection_manager import ConnectionManager
+
+    app.state.connection_manager = ConnectionManager()
+
+    consumer = NATSConsumer(
+        get_jetstream(),
+        JobRepository(session),
+        session=session,
+        connection_manager=app.state.connection_manager,
+    )
     await consumer.start()
     logger.info("NATS consumer started")
 
@@ -89,10 +101,13 @@ app.include_router(users_router)
 app.include_router(orgs_router)
 app.include_router(projects_router)
 app.include_router(mappings_router)
+app.include_router(account_types_router)
+app.include_router(suggestions_router)
 app.include_router(erp_router)
 app.include_router(storage_router)
 app.include_router(files_router)
 app.include_router(jobs_router)
+app.include_router(websocket_router)
 app.include_router(legacy_erp_router)
 app.include_router(legacy_mappings_router)
 

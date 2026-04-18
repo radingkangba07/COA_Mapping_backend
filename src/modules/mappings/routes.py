@@ -61,44 +61,9 @@ async def list_mappings(
     service: MappingService = Depends(get_mapping_service),
 ):
     try:
-        flat_mappings = await service.list_mappings(
+        return await service.list_mappings_grouped(
             project_id, status=status_filter, source_type=source_type, skip=skip, limit=limit
         )
-
-        # Group by (source_type, target_type) to match legacy response shape
-        from collections import defaultdict
-
-        groups: dict[tuple, list] = defaultdict(list)
-        group_scores: dict[tuple, list] = defaultdict(list)
-
-        for m in flat_mappings:
-            key = (m.source_account_type or "", m.target_account_type or "")
-            score = m.confidence_score
-            groups[key].append(
-                {
-                    "source_number": m.source_account_number or "",
-                    "source_name": m.source_account_name,
-                    "target_name": m.target_account_name or "",
-                    "score": score,
-                    "remark": m.mapping_source,
-                    "status": m.mapping_status,
-                }
-            )
-            group_scores[key].append(score)
-
-        result = []
-        for (source_type_val, target_type_val), accounts in groups.items():
-            scores = group_scores[(source_type_val, target_type_val)]
-            result.append(
-                {
-                    "source_type": source_type_val,
-                    "target_type": target_type_val,
-                    "confidence": round(sum(scores) / len(scores), 1) if scores else 0,
-                    "accounts": accounts,
-                }
-            )
-
-        return result
     except AppError:
         raise
     except Exception:

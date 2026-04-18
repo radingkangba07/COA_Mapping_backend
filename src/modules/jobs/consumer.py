@@ -7,15 +7,23 @@ from nats.js import JetStreamContext
 
 from src.core.config import get_settings
 from src.modules.jobs.protocols import JobRepositoryProtocol
+from src.modules.websocket.connection_manager import ConnectionManager
 
 logger = logging.getLogger(__name__)
 
 
 class NATSConsumer:
-    def __init__(self, jetstream: JetStreamContext, job_repo: JobRepositoryProtocol, session=None):
+    def __init__(
+        self,
+        jetstream: JetStreamContext,
+        job_repo: JobRepositoryProtocol,
+        session=None,
+        connection_manager: ConnectionManager | None = None,
+    ):
         self.js = jetstream
         self.job_repo = job_repo
         self.session = session
+        self.connection_manager = connection_manager
         self._consume_task: asyncio.Task | None = None
 
     async def start(self) -> None:
@@ -45,30 +53,19 @@ class NATSConsumer:
                 await msg.nak(delay=5)
 
     async def _handle_result(self, data: dict) -> None:
+        """
+        We pass the same shape straight through to WS clients
+        """
         job_id = UUID(data["job_id"])
         status = data["status"]
 
-        if status in ("completed", "failed"):
-            await self.job_repo.update_status(
-                job_id=job_id,
-                status=status,
-                progress=100.0 if status == "completed" else 0.0,
-                result_data=data.get("result_data"),
-                error_message=data.get("error_message"),
-            )
-            logger.info("Job %s %s", job_id, status)
-        elif status == "running":
-            await self.job_repo.update_status(
-                job_id=job_id,
-                status="processing",
-                progress=data.get("progress", 0.0),
-                message=data.get("message"),
-            )
-            logger.info("Job %s processing", job_id)
-        else:
-            await self.job_repo.update_status(
-                job_id=job_id,
-                status=status,
-                progress=data.get("progress", 0.0),
-            )
-            logger.info("Job %s status=%s", job_id, status)
+        updated = await self.job_repo.update_status(
+            job_id=job_id,
+            status=status,
+            error_message=data.get("error_message"),
+            result_data=data.get("result_data"),
+        )
+        logger.info("Job %s status=%s", job_id, status)
+
+        if self.connection_manager and updated is not None:
+            await self.connection_manager.broadcast(updated.project_id, data)

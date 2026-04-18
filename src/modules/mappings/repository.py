@@ -35,6 +35,12 @@ class MappingRepository(BaseRepository[CoaMapping]):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def get_by_ids(self, mapping_ids: list[UUID]) -> list[CoaMapping]:
+        if not mapping_ids:
+            return []
+        result = await self.session.execute(select(CoaMapping).where(CoaMapping.id.in_(mapping_ids)))
+        return list(result.scalars().all())
+
     async def bulk_update_status(self, mapping_ids: list[UUID], status: str) -> int:
         if not mapping_ids:
             return 0
