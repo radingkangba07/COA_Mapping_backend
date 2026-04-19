@@ -5,7 +5,7 @@ from uuid import UUID
 from coa_db_models.auth.models import Organization, User
 from coa_db_models.mappings.models import CoaMapping
 from coa_db_models.projects.models import Project, ProjectAccess
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from src.core.exceptions import ForbiddenError, NotFoundError
 from src.modules.projects.protocols import (
@@ -13,9 +13,6 @@ from src.modules.projects.protocols import (
     ProjectRepositoryProtocol,
 )
 from src.modules.projects.schemas import (
-    AccessResponse,
-    DashboardOrgResponse,
-    DashboardProjectResponse,
     ProjectCreate,
     ProjectUpdate,
 )
@@ -158,71 +155,6 @@ class ProjectService:
         if not access or permission_level(access.permission) < permission_level(min_permission):
             raise ForbiddenError("Insufficient permissions")
         return access
-
-    async def get_dashboard(self, user: User) -> list[DashboardOrgResponse]:
-        if not self.session:
-            return []
-
-        mapping_count_subq = (
-            select(func.count(CoaMapping.id))
-            .where(CoaMapping.project_id == Project.id)
-            .correlate(Project)
-            .scalar_subquery()
-        )
-
-        result = await self.session.execute(
-            select(
-                Project,
-                Organization.id.label("org_uuid"),
-                Organization.slug,
-                Organization.name.label("org_name"),
-                Organization.description.label("org_description"),
-                ProjectAccess.permission.label("user_permission"),
-                mapping_count_subq.label("mapping_count"),
-            )
-            .join(ProjectAccess, ProjectAccess.project_id == Project.id)
-            .join(Organization, Organization.id == Project.org_id)
-            .where(ProjectAccess.user_id == user.id)
-            .order_by(Project.updated_at.desc())
-        )
-        rows = result.all()
-
-        orgs_map: dict[UUID, DashboardOrgResponse] = {}
-        for row in rows:
-            project = row[0]
-            org_uuid = row.org_uuid
-            if org_uuid not in orgs_map:
-                orgs_map[org_uuid] = DashboardOrgResponse(
-                    id=org_uuid,
-                    slug=row.slug,
-                    name=row.org_name,
-                    description=row.org_description,
-                    projects=[],
-                )
-
-            access_rows = await self.access_repo.list_for_project(project.id)
-            access_list = [AccessResponse(**a) for a in access_rows]
-
-            orgs_map[org_uuid].projects.append(
-                DashboardProjectResponse(
-                    id=project.id,
-                    name=project.name,
-                    description=project.description,
-                    source_system=project.source_system,
-                    target_system=project.target_system,
-                    status=project.status,
-                    current_step=project.current_step,
-                    created_by=project.created_by,
-                    updated_by=project.updated_by,
-                    created_at=project.created_at,
-                    updated_at=project.updated_at,
-                    user_permission=row.user_permission,
-                    mapping_count=row.mapping_count or 0,
-                    access_list=access_list,
-                )
-            )
-
-        return list(orgs_map.values())
 
     async def get_project_detail(self, project_id: UUID, user: User) -> dict:
         row = await self.project_repo.get_by_id_with_users(project_id)
