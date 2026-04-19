@@ -69,35 +69,3 @@ class AccessResponse(BaseModel):
     user_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class DashboardProjectResponse(BaseModel):
-    id: uuid.UUID
-    name: str
-    description: str | None = None
-    source_system: str
-    target_system: str
-    status: str
-    current_step: int = 0
-    created_by: uuid.UUID
-    updated_by: uuid.UUID | None = None
-    created_at: datetime
-    updated_at: datetime
-    user_permission: str
-    mapping_count: int = 0
-    access_list: list[AccessResponse] = []
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class DashboardOrgResponse(BaseModel):
-    id: uuid.UUID
-    slug: str
-    name: str
-    description: str | None = None
-    projects: list[DashboardProjectResponse] = []
-
-
-class DashboardResponse(BaseModel):
-    organizations: list[DashboardOrgResponse]
-    total_projects: int
