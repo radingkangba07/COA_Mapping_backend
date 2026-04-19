@@ -92,3 +92,18 @@ async def test_delete_project(authenticated_client: AsyncClient, seed_user: dict
     resp = await authenticated_client.delete(f"/api/v1/projects/{project_id}")
     assert resp.status_code == 200
     assert resp.json()["status"] == "deleted"
+
+
+@pytest.mark.asyncio
+async def test_dashboard(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    await authenticated_client.post(
+        "/api/v1/projects",
+        json={"name": "Dashboard Project", "org_id": seed_user["org_id"]},
+    )
+    resp = await authenticated_client.get("/api/v1/dashboard/organizations")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "organizations" in data
+    assert "total_projects" in data
+    assert len(data["organizations"]) >= 1
+    assert all("projects" in org for org in data["organizations"])

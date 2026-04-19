@@ -12,6 +12,7 @@ from src.modules.projects.dependencies import get_project_service, require_proje
 from src.modules.projects.schemas import (
     AccessGrant,
     AccessResponse,
+    DashboardResponse,
     ProjectCreate,
     ProjectListResponse,
     ProjectResponse,
@@ -165,6 +166,22 @@ async def list_access(
 
 
 # --- Dashboard ---
+
+
+@router.get("/dashboard/organizations", response_model=DashboardResponse)
+async def dashboard_organizations(
+    user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        orgs = await service.get_dashboard(user)
+        total_projects = sum(len(o.projects) for o in orgs)
+        return DashboardResponse(organizations=orgs, total_projects=total_projects)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to load dashboard")
+        return JSONResponse(status_code=500, content={"detail": "Failed to load dashboard"})
 
 
 @router.get("/dashboard/projects/{project_id}")

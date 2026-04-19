@@ -5,8 +5,8 @@ Steps:
 4) Create project (auto-admin) → 5) List ERP systems → 6) Fuzzy match columns
 7) Hierarchical mapping → 8) Bulk save mappings → 9) Get stats
 10) Export as Excel → 11) List project files
-12) Create job (NATS publisher mocked) → 13) Grant access
-14) Viewer can read but not edit → 15) Revoke access
+12) Create job (NATS publisher mocked) → 13) Dashboard → 14) Grant access
+15) Viewer can read but not edit → 16) Revoke access
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -177,6 +177,20 @@ async def test_full_workflow(db_session):
         assert resp.status_code == 201
         job = resp.json()
         assert job["status"] == "queued"
+
+        # 12) Dashboard
+        resp = await client.get("/api/v1/dashboard/organizations", headers=auth)
+        assert resp.status_code == 200
+        dashboard = resp.json()
+        assert "organizations" in dashboard
+        assert len(dashboard["organizations"]) >= 1
+        found = False
+        for org in dashboard["organizations"]:
+            for p in org["projects"]:
+                if p["id"] == project_id:
+                    assert p["mapping_count"] == 2
+                    found = True
+        assert found, "Project not found in dashboard"
 
         # 13) Register + verify second user and grant viewer access
         resp = await client.post(
