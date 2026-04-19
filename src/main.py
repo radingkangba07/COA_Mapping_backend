@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from src.core.audit_middleware import audit_middleware
 from src.core.config import get_settings
 from src.core.database import close_db, init_db
 from src.core.exceptions import AppError
@@ -87,6 +88,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.middleware("http")(audit_middleware)
 
 
 # Global exception handler for domain errors

@@ -1,46 +1,61 @@
 import logging
 import sys
 
+import structlog
+
 from src.core.config import get_settings
-
-RESET = "\033[0m"
-COLORS = {
-    "DEBUG": "\033[36m",  # cyan
-    "INFO": "\033[32m",  # green
-    "WARNING": "\033[33m",  # yellow
-    "ERROR": "\033[31m",  # red
-    "CRITICAL": "\033[1;31m",  # bold red
-}
-
-
-class ColorFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        color = COLORS.get(record.levelname, RESET)
-        record.levelname = f"{color}{record.levelname:<8}{RESET}"
-        record.name = f"\033[34m{record.name}{RESET}"  # blue for module name
-        return super().format(record)
 
 
 def setup_logging() -> None:
-    """Configure application-wide logging based on APP_ENV."""
+    """Configure application-wide logging using structlog.
+
+    - production: JSON renderer (one event per line, ready for log aggregators)
+    - everywhere else: pretty console renderer with colors (dev ergonomics)
+
+    Stdlib loggers (`logger = logging.getLogger(__name__)`) are bridged through
+    the same pipeline, so existing call sites emit the same format without
+    changes.
+    """
     settings = get_settings()
+    is_prod = settings.app_env == "production"
     level = logging.DEBUG if settings.debug else logging.INFO
 
-    formatter = ColorFormatter(
-        fmt="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+    shared_processors: list = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.processors.TimeStamper(fmt="iso", utc=True, key="ts"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+    ]
+
+    renderer: structlog.types.Processor = (
+        structlog.processors.JSONRenderer() if is_prod else structlog.dev.ConsoleRenderer(colors=True)
+    )
+
+    structlog.configure(
+        processors=[*shared_processors, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
+        wrapper_class=structlog.make_filtering_bound_logger(level),
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+
+    formatter = structlog.stdlib.ProcessorFormatter(
+        foreign_pre_chain=shared_processors,
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            renderer,
+        ],
     )
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
 
-    logging.basicConfig(
-        level=level,
-        handlers=[handler],
-        force=True,
-    )
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(level)
 
-    # Quiet noisy third-party loggers
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
