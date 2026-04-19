@@ -7,9 +7,13 @@ import pandas as pd
 from coa_db_models.mappings.models import CoaMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import NotFoundError
 from src.modules.mappings.repository import MappingRepository
 from src.modules.mappings.schemas import MappingBulkSaveResponse, MappingCreate, MappingStatsResponse, MappingUpdate
+from src.modules.projects.dependencies import (
+    authorize_for_resource,
+    authorize_for_resources,
+    ensure_project_access,
+)
 from src.modules.projects.repository import ProjectRepository
 
 logger = logging.getLogger(__name__)
@@ -84,29 +88,36 @@ class MappingService:
             for (source_type_val, target_type_val), scores in group_scores.items()
         ]
 
-    async def update_mapping(self, mapping_id: UUID, data: MappingUpdate) -> CoaMapping:
+    async def update_mapping(self, mapping_id: UUID, data: MappingUpdate, user_id: UUID) -> CoaMapping:
         mapping = await self.mapping_repo.get_by_id(mapping_id)
-        if not mapping:
-            raise NotFoundError("Mapping not found")
+        await authorize_for_resource(mapping, self.session, user_id, "editor", "Mapping not found")
+        assert mapping is not None
         update_data = data.model_dump(exclude_unset=True)
         update_data["mapping_source"] = "user"
         mapping = await self.mapping_repo.update(mapping, update_data)
         await self.session.commit()
         return mapping
 
-    async def bulk_update_status(self, mapping_ids: list[UUID], updates: MappingUpdate) -> int:
+    async def bulk_update_status(self, mapping_ids: list[UUID], updates: MappingUpdate, user_id: UUID) -> int:
         update_data = updates.model_dump(exclude_unset=True)
         if "mapping_status" not in update_data:
             return 0
+        rows = await self.mapping_repo.get_by_ids(mapping_ids)
+        await authorize_for_resources(rows, self.session, user_id, "editor")
         count = await self.mapping_repo.bulk_update_status(mapping_ids, update_data["mapping_status"])
         await self.session.commit()
         return count
 
-    async def delete_mapping(self, mapping_id: UUID) -> None:
+    async def delete_mapping(self, mapping_id: UUID, user_id: UUID) -> None:
+        mapping = await self.mapping_repo.get_by_id(mapping_id)
+        await authorize_for_resource(mapping, self.session, user_id, "editor", "Mapping not found")
         await self.mapping_repo.delete(mapping_id)
         await self.session.commit()
 
-    async def bulk_update_by_score(self, project_id: UUID, min_score: float, max_score: float, new_status: str) -> dict:
+    async def bulk_update_by_score(
+        self, project_id: UUID, min_score: float, max_score: float, new_status: str, user_id: UUID
+    ) -> dict:
+        await ensure_project_access(self.session, user_id, project_id, "editor")
         result = await self.mapping_repo.update_by_score_range(project_id, min_score, max_score, new_status)
         await self.session.commit()
         return {"matched": result["matched"], "modified": result["modified"], "status": new_status}

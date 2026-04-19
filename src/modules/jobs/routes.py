@@ -27,6 +27,7 @@ async def create_job(
         return await service.create_job(
             data.project_id,
             data.job_type,
+            user.id,
             data.input_data,
             source_file_id=data.source_file_id,
             target_file_id=data.target_file_id,
@@ -47,7 +48,7 @@ async def get_job(
     service: JobService = Depends(get_job_service),
 ):
     try:
-        return await service.get_job(job_id)
+        return await service.get_job(job_id, user.id)
     except AppError:
         raise
     except Exception:
@@ -62,7 +63,7 @@ async def get_job_status(
     service: JobService = Depends(get_job_service),
 ):
     try:
-        return await service.get_status(job_id)
+        return await service.get_status(job_id, user.id)
     except AppError:
         raise
     except Exception:
@@ -77,7 +78,7 @@ async def get_job_result(
     service: JobService = Depends(get_job_service),
 ):
     try:
-        return await service.get_result(job_id)
+        return await service.get_result(job_id, user.id)
     except AppError:
         raise
     except Exception:
@@ -109,7 +110,7 @@ async def cancel_job(
     service: JobService = Depends(get_job_service),
 ):
     try:
-        await service.cancel_job(job_id)
+        await service.cancel_job(job_id, user.id)
     except AppError:
         raise
     except Exception:

@@ -63,6 +63,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     logger.info("Shutting down COA Migration API")
     close_resend()
+    await consumer.stop()
     await close_nats()
     close_s3_client()
     await close_db()

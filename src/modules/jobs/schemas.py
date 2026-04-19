@@ -48,3 +48,9 @@ class JobResultResponse(BaseModel):
     status: str
     result_data: dict | None = None
     error_message: str | None = None
+
+
+class JobStatusNotification(BaseModel):
+    """Shape of NATS messages on jobs.mapping.status from the ML worker."""
+
+    job_id: uuid.UUID

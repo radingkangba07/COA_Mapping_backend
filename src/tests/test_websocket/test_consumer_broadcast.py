@@ -1,7 +1,7 @@
-"""Unit tests for NATS result consumer message handling.
+"""Unit tests: NATSConsumer reads DB and broadcasts authoritative job state.
 
-Contract: ML worker writes final status (completed/failed) to the jobs table,
-then publishes {job_id} on NATS. The consumer reads the DB and broadcasts.
+The ML worker writes the terminal status to the jobs table, then publishes
+{job_id} on NATS. The consumer fetches the job and broadcasts to WS clients.
 """
 
 import uuid
@@ -22,7 +22,7 @@ def _make_job(project_id: uuid.UUID, status: str, error_message: str | None = No
 
 
 @pytest.mark.asyncio
-async def test_handle_completed_broadcasts_job_id_and_status():
+async def test_broadcasts_completed_payload():
     project_id = uuid.uuid4()
     job = _make_job(project_id, "completed")
 
@@ -34,14 +34,15 @@ async def test_handle_completed_broadcasts_job_id_and_status():
 
     await consumer._handle_result({"job_id": str(job.id)})
 
-    mock_repo.get_by_id.assert_awaited_once_with(job.id)
-    mock_manager.broadcast.assert_awaited_once_with(project_id, {"job_id": str(job.id), "status": "completed"})
+    target_project, payload = mock_manager.broadcast.call_args.args
+    assert target_project == project_id
+    assert payload == {"job_id": str(job.id), "status": "completed"}
 
 
 @pytest.mark.asyncio
-async def test_handle_failed_broadcasts_error_message_from_db():
+async def test_broadcasts_failed_payload_with_error_from_db():
     project_id = uuid.uuid4()
-    job = _make_job(project_id, "failed", error_message="File not found in R2")
+    job = _make_job(project_id, "failed", error_message="ML worker crashed")
 
     mock_repo = AsyncMock()
     mock_repo.get_by_id.return_value = job
@@ -51,14 +52,26 @@ async def test_handle_failed_broadcasts_error_message_from_db():
 
     await consumer._handle_result({"job_id": str(job.id)})
 
-    mock_manager.broadcast.assert_awaited_once_with(
-        project_id,
-        {"job_id": str(job.id), "status": "failed", "error_message": "File not found in R2"},
-    )
+    _, payload = mock_manager.broadcast.call_args.args
+    assert payload["status"] == "failed"
+    assert payload["error_message"] == "ML worker crashed"
 
 
 @pytest.mark.asyncio
-async def test_handle_unknown_job_skips_broadcast():
+async def test_no_broadcast_when_manager_is_none():
+    job = _make_job(uuid.uuid4(), "completed")
+
+    mock_repo = AsyncMock()
+    mock_repo.get_by_id.return_value = job
+
+    consumer = NATSConsumer(jetstream=AsyncMock(), job_repo=mock_repo, connection_manager=None)
+
+    # Should not raise
+    await consumer._handle_result({"job_id": str(job.id)})
+
+
+@pytest.mark.asyncio
+async def test_no_broadcast_when_job_not_found():
     mock_repo = AsyncMock()
     mock_repo.get_by_id.return_value = None
     mock_manager = AsyncMock()

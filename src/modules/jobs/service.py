@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import NotFoundError
 from src.modules.jobs.publisher import NATSPublisher
 from src.modules.jobs.repository import JobRepository
+from src.modules.projects.dependencies import authorize_for_resource, ensure_project_access
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class JobService:
         self,
         project_id: UUID,
         job_type: str,
+        user_id: UUID,
         input_data: dict | None = None,
         source_file_id: UUID | None = None,
         target_file_id: UUID | None = None,
@@ -33,6 +35,7 @@ class JobService:
         account_type_mapping_file_id: UUID | None = None,
         triggered_by: UUID | None = None,
     ) -> Job:
+        await ensure_project_access(self.session, user_id, project_id, "editor")
         job = await self.job_repo.create_job(
             project_id,
             job_type,
@@ -51,14 +54,14 @@ class JobService:
         result = await self.job_repo.get_by_id(job.id)
         return result
 
-    async def get_job(self, job_id: UUID) -> Job:
+    async def get_job(self, job_id: UUID, user_id: UUID) -> Job:
         job = await self.job_repo.get_by_id(job_id)
-        if not job:
-            raise NotFoundError("Job not found")
+        await authorize_for_resource(job, self.session, user_id, "viewer", "Job not found")
+        assert job is not None
         return job
 
-    async def get_status(self, job_id: UUID) -> dict:
-        job = await self.get_job(job_id)
+    async def get_status(self, job_id: UUID, user_id: UUID) -> dict:
+        job = await self.get_job(job_id, user_id)
         return {
             "job_id": job.id,
             "status": job.status,
@@ -67,8 +70,8 @@ class JobService:
             "has_error": job.status == "failed",
         }
 
-    async def get_result(self, job_id: UUID) -> dict:
-        job = await self.get_job(job_id)
+    async def get_result(self, job_id: UUID, user_id: UUID) -> dict:
+        job = await self.get_job(job_id, user_id)
         if job.status != "completed":
             raise NotFoundError("Job result not available yet")
         return {
@@ -81,8 +84,10 @@ class JobService:
     async def list_project_jobs(self, project_id: UUID, status: str | None = None, limit: int = 100) -> list[Job]:
         return await self.job_repo.list_by_project(project_id, status, limit)
 
-    async def cancel_job(self, job_id: UUID) -> None:
-        job = await self.get_job(job_id)
+    async def cancel_job(self, job_id: UUID, user_id: UUID) -> None:
+        job = await self.job_repo.get_by_id(job_id)
+        await authorize_for_resource(job, self.session, user_id, "editor", "Job not found")
+        assert job is not None
         if job.status not in ("queued",):
             raise NotFoundError("Only queued jobs can be cancelled")
         await self.job_repo.update_status(job.id, status="failed", error_message="Cancelled by user")

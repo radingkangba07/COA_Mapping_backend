@@ -2,11 +2,39 @@ import logging
 from collections import defaultdict
 from uuid import UUID
 
+from coa_db_models.mappings.models import CoaMapping, CoaMappingSuggestion
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.mappings.suggestions.repository import SuggestionRepository
 
 logger = logging.getLogger(__name__)
+
+
+def _merge(suggestion: CoaMappingSuggestion, mapping: CoaMapping | None) -> dict:
+    """Mapping wins; suggestion fills any fields the mapping doesn't have."""
+    if mapping is None:
+        return {
+            "id": str(suggestion.id),
+            "source_name": suggestion.source_account_name or "",
+            "source_type": suggestion.source_account_type or "",
+            "target_name": suggestion.target_account_name or "",
+            "target_type": suggestion.target_account_type or "",
+            "status": suggestion.mapping_status,
+            "mapping_source": suggestion.mapping_source,
+            "score": float(suggestion.confidence_score),
+        }
+    return {
+        "id": str(mapping.id),
+        "source_name": mapping.source_account_name or suggestion.source_account_name or "",
+        "source_type": mapping.source_account_type or suggestion.source_account_type or "",
+        "target_name": mapping.target_account_name or suggestion.target_account_name or "",
+        "target_type": mapping.target_account_type or suggestion.target_account_type or "",
+        "status": mapping.mapping_status or suggestion.mapping_status,
+        "mapping_source": mapping.mapping_source or suggestion.mapping_source,
+        "score": float(
+            mapping.confidence_score if mapping.confidence_score is not None else suggestion.confidence_score
+        ),
+    }
 
 
 class SuggestionService:
@@ -22,25 +50,25 @@ class SuggestionService:
         skip: int = 0,
         limit: int = 50,
     ) -> list[dict]:
-        suggestions = await self.repo.list_by_project(project_id, status, source_type, skip, limit)
+        rows = await self.repo.list_by_project_with_mappings(project_id, status, source_type, skip, limit)
 
         groups: dict[tuple, list] = defaultdict(list)
         group_scores: dict[tuple, list[float]] = defaultdict(list)
 
-        for s in suggestions:
-            key = (s.source_account_type or "", s.target_account_type or "")
-            score = float(s.confidence_score)
+        for suggestion, mapping in rows:
+            merged = _merge(suggestion, mapping)
+            key = (merged["source_type"], merged["target_type"])
             groups[key].append(
                 {
-                    "id": str(s.id),
-                    "source_name": s.source_account_name or "",
-                    "target_name": s.target_account_name or "",
-                    "score": score,
-                    "status": s.mapping_status,
-                    "mapping_source": s.mapping_source,
+                    "id": merged["id"],
+                    "source_name": merged["source_name"],
+                    "target_name": merged["target_name"],
+                    "score": merged["score"],
+                    "status": merged["status"],
+                    "mapping_source": merged["mapping_source"],
                 }
             )
-            group_scores[key].append(score)
+            group_scores[key].append(merged["score"])
 
         return [
             {

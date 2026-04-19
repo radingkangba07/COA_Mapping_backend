@@ -5,7 +5,9 @@ from uuid import UUID
 from coa_db_models.auth.models import User
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.database import get_db
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
 from src.modules.jobs.dependencies import get_job_service
@@ -25,7 +27,7 @@ from src.modules.mappings.schemas import (
     MappingUpdate,
 )
 from src.modules.mappings.service import MappingService
-from src.modules.projects.dependencies import get_project_service, require_project_access
+from src.modules.projects.dependencies import ensure_project_access, get_project_service, require_project_access
 from src.modules.projects.service import ProjectService
 
 logger = logging.getLogger(__name__)
@@ -79,7 +81,7 @@ async def update_mapping(
     service: MappingService = Depends(get_mapping_service),
 ):
     try:
-        return await service.update_mapping(mapping_id, data)
+        return await service.update_mapping(mapping_id, data, user.id)
     except AppError:
         raise
     except Exception:
@@ -94,7 +96,7 @@ async def bulk_update(
     service: MappingService = Depends(get_mapping_service),
 ):
     try:
-        count = await service.bulk_update_status(data.mapping_ids, data.updates)
+        count = await service.bulk_update_status(data.mapping_ids, data.updates, user.id)
         return {"updated_count": count}
     except AppError:
         raise
@@ -126,6 +128,7 @@ async def bulk_update_status_by_score(
             min_score=min_score,
             max_score=max_score,
             new_status=new_status,
+            user_id=user.id,
         )
         return result
     except (AppError, Exception) as exc:
@@ -140,12 +143,15 @@ async def legacy_bulk_save(
     project_id: str = Query(...),
     mappings: list[dict] = [],  # noqa: B006
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     service: MappingService = Depends(get_mapping_service),
 ):
     """Legacy /mappings/bulk endpoint — takes project_id as query param."""
     try:
+        pid = UUID(project_id)
+        await ensure_project_access(db, user.id, pid, "editor")
         mapping_creates = [MappingCreate(**m) for m in mappings]
-        return await service.bulk_save(UUID(project_id), mapping_creates)
+        return await service.bulk_save(pid, mapping_creates)
     except AppError:
         raise
     except Exception:
@@ -160,7 +166,7 @@ async def delete_mapping(
     service: MappingService = Depends(get_mapping_service),
 ):
     try:
-        await service.delete_mapping(mapping_id)
+        await service.delete_mapping(mapping_id, user.id)
     except AppError:
         raise
     except Exception:
@@ -207,14 +213,17 @@ async def export_mappings(
 async def hierarchical_mapping(
     data: HierarchicalMappingRequest,
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     service: JobService = Depends(get_job_service),
     project_service: ProjectService = Depends(get_project_service),
 ):
     try:
+        await ensure_project_access(db, user.id, data.project_id, "editor")
         project = await project_service.get_project(data.project_id)
         job = await service.create_job(
             project_id=data.project_id,
             job_type="account_matching",
+            user_id=user.id,
             source_file_id=data.source_file_id,
             target_file_id=data.target_file_id,
             mapping_file_id=data.mapping_file_id,
@@ -274,7 +283,8 @@ async def legacy_fuzzy_match(
 async def legacy_hierarchical_mapping(
     data: HierarchicalMappingRequest,
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     service: JobService = Depends(get_job_service),
     project_service: ProjectService = Depends(get_project_service),
 ):
-    return await hierarchical_mapping(data, user, service, project_service)
+    return await hierarchical_mapping(data, user, db, service, project_service)
