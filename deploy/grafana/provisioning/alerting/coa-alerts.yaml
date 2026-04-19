@@ -1,0 +1,51 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: coa-http
+    folder: COA
+    interval: 1m
+    rules:
+      - uid: coa-5xx-spike
+        title: COA 5xx spike
+        condition: A
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: sum(rate({service="coa-api", status_class="5xx"}[1m]))
+              refId: A
+              editorMode: code
+              queryType: range
+        annotations:
+          summary: 5xx error rate > 5 req/min sustained for 5 minutes
+        labels:
+          severity: warning
+
+      - uid: coa-auth-failure-burst
+        title: COA auth failure burst
+        condition: A
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: sum(count_over_time({service="coa-api", status_class="4xx"} | json | status="401" [5m]))
+              refId: A
+              editorMode: code
+              queryType: instant
+        annotations:
+          summary: More than 20 auth failures in a 5-minute window
+        labels:
+          severity: warning
