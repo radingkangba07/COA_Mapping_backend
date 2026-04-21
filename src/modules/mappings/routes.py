@@ -21,10 +21,10 @@ from src.modules.mappings.schemas import (
     HierarchicalMappingResponse,
     MappingBulkSaveResponse,
     MappingBulkUpdate,
-    MappingCreate,
     MappingResponse,
     MappingStatsResponse,
     MappingUpdate,
+    MappingUpsert,
 )
 from src.modules.mappings.service import MappingService
 from src.modules.projects.dependencies import ensure_project_access, get_project_service, require_project_access
@@ -39,7 +39,7 @@ legacy_mappings_router = APIRouter(prefix="/api/v1", tags=["mappings"], include_
 @router.post("/project/{project_id}", response_model=MappingBulkSaveResponse, status_code=status.HTTP_201_CREATED)
 async def bulk_save_mappings(
     project_id: UUID,
-    mappings: list[MappingCreate],
+    mappings: list[MappingUpsert],
     _access=Depends(require_project_access("editor")),
     service: MappingService = Depends(get_mapping_service),
 ):
@@ -71,22 +71,6 @@ async def list_mappings(
     except Exception:
         logger.exception("Failed to list mappings for project %s", project_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to list mappings"})
-
-
-@router.patch("/{mapping_id}", response_model=MappingResponse)
-async def update_mapping(
-    mapping_id: UUID,
-    data: MappingUpdate,
-    user: User = Depends(get_current_user),
-    service: MappingService = Depends(get_mapping_service),
-):
-    try:
-        return await service.update_mapping(mapping_id, data, user.id)
-    except AppError:
-        raise
-    except Exception:
-        logger.exception("Failed to update mapping %s", mapping_id)
-        return JSONResponse(status_code=500, content={"detail": "Failed to update mapping"})
 
 
 @router.post("/bulk-update")
@@ -150,13 +134,29 @@ async def legacy_bulk_save(
     try:
         pid = UUID(project_id)
         await ensure_project_access(db, user.id, pid, "editor")
-        mapping_creates = [MappingCreate(**m) for m in mappings]
-        return await service.bulk_save(pid, mapping_creates)
+        mapping_upserts = [MappingUpsert(**m) for m in mappings]
+        return await service.bulk_save(pid, mapping_upserts)
     except AppError:
         raise
     except Exception:
         logger.exception("Failed to bulk save mappings (legacy) for project %s", project_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to save mappings"})
+
+
+@router.patch("/{mapping_id}", response_model=MappingResponse)
+async def update_mapping(
+    mapping_id: UUID,
+    data: MappingUpdate,
+    user: User = Depends(get_current_user),
+    service: MappingService = Depends(get_mapping_service),
+):
+    try:
+        return await service.update_mapping(mapping_id, data, user.id)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to update mapping %s", mapping_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to update mapping"})
 
 
 @router.delete("/{mapping_id}", status_code=status.HTTP_204_NO_CONTENT)

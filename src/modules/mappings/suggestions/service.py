@@ -14,7 +14,8 @@ def _merge(suggestion: CoaMappingSuggestion, mapping: CoaMapping | None) -> dict
     """Mapping wins; suggestion fills any fields the mapping doesn't have."""
     if mapping is None:
         return {
-            "id": str(suggestion.id),
+            "id": None,  # no mapping yet — FE must send suggestion_id on save to create + link
+            "suggestion_id": str(suggestion.id),
             "source_name": suggestion.source_account_name or "",
             "source_type": suggestion.source_account_type or "",
             "target_name": suggestion.target_account_name or "",
@@ -25,6 +26,7 @@ def _merge(suggestion: CoaMappingSuggestion, mapping: CoaMapping | None) -> dict
         }
     return {
         "id": str(mapping.id),
+        "suggestion_id": str(suggestion.id),
         "source_name": mapping.source_account_name or suggestion.source_account_name or "",
         "source_type": mapping.source_account_type or suggestion.source_account_type or "",
         "target_name": mapping.target_account_name or suggestion.target_account_name or "",
@@ -61,6 +63,7 @@ class SuggestionService:
             groups[key].append(
                 {
                     "id": merged["id"],
+                    "suggestion_id": merged["suggestion_id"],
                     "source_name": merged["source_name"],
                     "target_name": merged["target_name"],
                     "score": merged["score"],

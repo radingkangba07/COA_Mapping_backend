@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /
 ARG GITHUB_TOKEN
 COPY pyproject.toml uv.lock ./
 RUN git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" && \
-    uv sync --frozen --no-dev && \
+    uv sync --no-dev --upgrade-package coa-db-models && \
     git config --global --unset-all url."https://${GITHUB_TOKEN}@github.com/".insteadOf
 
 # Copy application code

@@ -65,7 +65,7 @@ jobs:
         run: git config --global url."https://${{ secrets.GH_PAT_COA_DB_MODELS }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev --upgrade-package coa-db-models
 
       - name: Ruff lint (catches import errors, undefined names, bad syntax)
         run: uv run ruff check src/ --output-format=github
@@ -112,7 +112,7 @@ jobs:
         run: git config --global url."https://${{ secrets.GH_PAT_COA_DB_MODELS }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev --upgrade-package coa-db-models
 
       - name: Run tests
         run: uv run pytest src/tests/ -v --tb=short --junitxml=test-results.xml -x

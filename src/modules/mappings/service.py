@@ -7,8 +7,9 @@ import pandas as pd
 from coa_db_models.mappings.models import CoaMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.exceptions import NotFoundError
 from src.modules.mappings.repository import MappingRepository
-from src.modules.mappings.schemas import MappingBulkSaveResponse, MappingCreate, MappingStatsResponse, MappingUpdate
+from src.modules.mappings.schemas import MappingBulkSaveResponse, MappingStatsResponse, MappingUpdate, MappingUpsert
 from src.modules.projects.dependencies import (
     authorize_for_resource,
     authorize_for_resources,
@@ -30,15 +31,28 @@ class MappingService:
         self.project_repo = project_repo
         self.session = session
 
-    async def bulk_save(self, project_id: UUID, mappings: list[MappingCreate]) -> MappingBulkSaveResponse:
-        count = await self.mapping_repo.bulk_replace(project_id, mappings)
+    async def bulk_save(self, project_id: UUID, mappings: list[MappingUpsert]) -> MappingBulkSaveResponse:
+        result = await self.mapping_repo.bulk_upsert(project_id, mappings)
+        if result["missing_ids"]:
+            raise NotFoundError(f"Mappings not found in project {project_id}: {result['missing_ids']}")
         # Auto-transition draft → in_progress
         project = await self.project_repo.get_by_id(project_id)
         if project and project.status == "draft":
             await self.project_repo.update_status(project_id, "in_progress")
         await self.session.commit()
-        logger.info("Bulk saved %d mappings for project %s", count, project_id)
-        return MappingBulkSaveResponse(mapping_count=count, project_id=project_id)
+        total = result["inserted"] + result["updated"]
+        logger.info(
+            "Upserted mappings for project %s (inserted=%d, updated=%d)",
+            project_id,
+            result["inserted"],
+            result["updated"],
+        )
+        return MappingBulkSaveResponse(
+            mapping_count=total,
+            project_id=project_id,
+            inserted=result["inserted"],
+            updated=result["updated"],
+        )
 
     async def list_mappings(
         self,
@@ -68,11 +82,13 @@ class MappingService:
             score = m.confidence_score
             groups[key].append(
                 {
+                    "id": str(m.id),
                     "source_number": m.source_account_number or "",
                     "source_name": m.source_account_name,
                     "target_name": m.target_account_name or "",
                     "score": score,
                     "remark": m.mapping_source,
+                    "mapping_source": m.mapping_source,
                     "status": m.mapping_status,
                 }
             )
@@ -111,7 +127,8 @@ class MappingService:
     async def delete_mapping(self, mapping_id: UUID, user_id: UUID) -> None:
         mapping = await self.mapping_repo.get_by_id(mapping_id)
         await authorize_for_resource(mapping, self.session, user_id, "editor", "Mapping not found")
-        await self.mapping_repo.delete(mapping_id)
+        assert mapping is not None
+        await self.mapping_repo.update(mapping, {"is_active": False})
         await self.session.commit()
 
     async def bulk_update_by_score(

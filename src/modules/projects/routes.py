@@ -231,11 +231,11 @@ async def dashboard_save_mappings(
 ):
     try:
         from src.modules.mappings.dependencies import get_mapping_service
-        from src.modules.mappings.schemas import MappingCreate
+        from src.modules.mappings.schemas import MappingUpsert
 
         mapping_service = get_mapping_service()
-        mapping_creates = [MappingCreate(**m) for m in mappings]
-        return await mapping_service.bulk_save(project_id, mapping_creates)
+        mapping_upserts = [MappingUpsert(**m) for m in mappings]
+        return await mapping_service.bulk_save(project_id, mapping_upserts)
     except AppError:
         raise
     except Exception:

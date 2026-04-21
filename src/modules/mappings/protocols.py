@@ -3,11 +3,11 @@ from uuid import UUID
 
 from coa_db_models.mappings.models import CoaMapping
 
-from src.modules.mappings.schemas import MappingCreate, MappingUpdate
+from src.modules.mappings.schemas import MappingUpdate, MappingUpsert
 
 
 class MappingRepositoryProtocol(Protocol):
-    async def bulk_replace(self, project_id: UUID, mappings: list[MappingCreate]) -> int: ...
+    async def bulk_upsert(self, project_id: UUID, mappings: list[MappingUpsert]) -> dict: ...
     async def list_by_project(
         self,
         project_id: UUID,

@@ -76,22 +76,13 @@ API docs available at http://localhost:8001/api/docs
 
 ## Shared Models & Migrations
 
-All SQLAlchemy models and Alembic migrations live in the **coa-db-models** package, installed as a git dependency. This repo only contains application logic (schemas, services, routes).
+All SQLAlchemy models and Alembic migrations live in the **coa-db-models** package, installed as a git dependency from its `develop` branch. Every `uv sync` in CI and Docker passes `--upgrade-package coa-db-models`, so the latest upstream commit is pulled automatically on each install — no lock bump required.
 
-### When `coa-db-models` is updated
-
-If someone pushes changes to `coa-db-models` (new model, new column, new migration), you need to update your local install:
-
-```bash
-uv lock --upgrade-package coa-db-models   # fetches the latest commit
-uv sync --dev                              # installs it
-```
-
-Then commit the updated `uv.lock` so other developers get the change too.
+For local development, run `uv sync --dev --upgrade-package coa-db-models` when you want to pick up a new upstream change. (Plain `uv sync --dev` will use the locally-pinned SHA, which is fine for offline work.)
 
 ### If you need a schema change
 
-Make it in `coa-db-models`, not here. Add the model there, generate the migration there, then update this repo's dependency with the commands above.
+Make it in `coa-db-models`, not here. Add the model there, generate the migration there, then push to `develop` — your next `uv sync --upgrade-package coa-db-models` (or the next CI run) will pull it in.
 
 ## Running Tests
 

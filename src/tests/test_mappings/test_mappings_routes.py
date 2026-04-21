@@ -45,28 +45,38 @@ async def test_bulk_save_mappings(authenticated_client: AsyncClient, seed_user: 
 
 
 @pytest.mark.asyncio
-async def test_bulk_save_replaces_existing(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_bulk_save_upserts(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     project_id = await _create_project(authenticated_client, seed_user["org_id"])
-    # First save
+    # First save — two INSERTs (no id)
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
-        json=[{"source_account_name": "Old", "mapping_status": "suggested", "confidence_score": 50}],
+        json=[
+            {"source_account_name": "A", "mapping_status": "suggested", "confidence_score": 50},
+            {"source_account_name": "B", "mapping_status": "suggested", "confidence_score": 60},
+        ],
     )
-    # Second save replaces
+    list_resp = await authenticated_client.get(f"/api/v1/mappings/project/{project_id}")
+    accounts = [a for g in list_resp.json() for a in g["accounts"]]
+    assert len(accounts) == 2
+    existing_id = accounts[0]["id"]
+
+    # Second save — UPDATE one + INSERT one
     resp = await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
         json=[
-            {"source_account_name": "New1", "mapping_status": "suggested", "confidence_score": 80},
-            {"source_account_name": "New2", "mapping_status": "suggested", "confidence_score": 90},
+            {"id": existing_id, "target_account_name": "Updated", "mapping_status": "approved"},
+            {"source_account_name": "C", "mapping_status": "suggested", "confidence_score": 70},
         ],
     )
-    assert resp.json()["mapping_count"] == 2
+    body = resp.json()
+    assert body["mapping_count"] == 2
+    assert body["inserted"] == 1
+    assert body["updated"] == 1
 
-    # List should only have the new ones (grouped format)
+    # List should now have 3 total (original 2 + 1 new)
     list_resp = await authenticated_client.get(f"/api/v1/mappings/project/{project_id}")
-    groups = list_resp.json()
-    total_accounts = sum(len(g["accounts"]) for g in groups)
-    assert total_accounts == 2
+    accounts = [a for g in list_resp.json() for a in g["accounts"]]
+    assert len(accounts) == 3
 
 
 @pytest.mark.asyncio

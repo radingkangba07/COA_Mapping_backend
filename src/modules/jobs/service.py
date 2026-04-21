@@ -46,11 +46,16 @@ class JobService:
             account_type_mapping_file_id=account_type_mapping_file_id,
             triggered_by=triggered_by,
         )
-
-        await self.publisher.publish_job(job)
         await self.job_repo.update_status(job.id, status="queued")
         await self.session.commit()
         logger.info("Job %s (%s) created for project %s", job.id, job_type, project_id)
+
+        try:
+            await self.publisher.publish_job(job)
+        except Exception:
+            logger.exception("NATS publish failed for job %s after DB commit", job.id)
+            raise
+
         result = await self.job_repo.get_by_id(job.id)
         return result
 

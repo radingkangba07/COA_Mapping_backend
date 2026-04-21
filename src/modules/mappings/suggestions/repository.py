@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from coa_db_models.mappings.models import CoaMapping, CoaMappingSuggestion
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from src.core.base_repository import BaseRepository
 
@@ -17,10 +17,20 @@ class SuggestionRepository(BaseRepository[CoaMappingSuggestion]):
         skip: int = 0,
         limit: int = 50,
     ) -> list[tuple[CoaMappingSuggestion, CoaMapping | None]]:
+        # Three states per suggestion:
+        #   - coa_mapping_id NULL                       → pending (show ML values)
+        #   - coa_mapping_id set, mapping.is_active=t   → confirmed (show mapping values)
+        #   - coa_mapping_id set, mapping.is_active=f   → rejected (hide)
         query = (
             select(CoaMappingSuggestion, CoaMapping)
-            .outerjoin(CoaMapping, CoaMapping.id == CoaMappingSuggestion.coa_mapping_id)
-            .where(CoaMappingSuggestion.project_id == project_id)
+            .outerjoin(
+                CoaMapping,
+                (CoaMapping.id == CoaMappingSuggestion.coa_mapping_id) & (CoaMapping.is_active.is_(True)),
+            )
+            .where(
+                CoaMappingSuggestion.project_id == project_id,
+                or_(CoaMappingSuggestion.coa_mapping_id.is_(None), CoaMapping.id.is_not(None)),
+            )
         )
         if status:
             query = query.where(CoaMappingSuggestion.mapping_status == status)
