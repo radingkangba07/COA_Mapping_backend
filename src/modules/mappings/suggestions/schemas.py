@@ -16,3 +16,10 @@ class SuggestionGroupResponse(BaseModel):
     target_type: str
     confidence: float
     accounts: list[SuggestionAccountResponse]
+
+
+class SuggestionListResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    groups: list[SuggestionGroupResponse]

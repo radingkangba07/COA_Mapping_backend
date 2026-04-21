@@ -51,7 +51,8 @@ class SuggestionService:
         source_type: str | None = None,
         skip: int = 0,
         limit: int = 50,
-    ) -> list[dict]:
+    ) -> dict:
+        total = await self.repo.count_by_project(project_id, status, source_type)
         rows = await self.repo.list_by_project_with_mappings(project_id, status, source_type, skip, limit)
 
         groups: dict[tuple, list] = defaultdict(list)
@@ -73,7 +74,7 @@ class SuggestionService:
             )
             group_scores[key].append(merged["score"])
 
-        return [
+        grouped = [
             {
                 "source_type": source_type_val,
                 "target_type": target_type_val,
@@ -82,3 +83,5 @@ class SuggestionService:
             }
             for (source_type_val, target_type_val), scores in group_scores.items()
         ]
+
+        return {"total": total, "skip": skip, "limit": limit, "groups": grouped}
