@@ -49,11 +49,8 @@ class SuggestionService:
         project_id: UUID,
         status: str | None = None,
         source_type: str | None = None,
-        skip: int = 0,
-        limit: int = 50,
     ) -> dict:
-        total = await self.repo.count_by_project(project_id, status, source_type)
-        rows = await self.repo.list_by_project_with_mappings(project_id, status, source_type, skip, limit)
+        rows = await self.repo.list_by_project_with_mappings(project_id, status, source_type)
 
         groups: dict[tuple, list] = defaultdict(list)
         group_scores: dict[tuple, list[float]] = defaultdict(list)
@@ -84,4 +81,4 @@ class SuggestionService:
             for (source_type_val, target_type_val), scores in group_scores.items()
         ]
 
-        return {"total": total, "skip": skip, "limit": limit, "groups": grouped}
+        return {"total": len(rows), "groups": grouped}

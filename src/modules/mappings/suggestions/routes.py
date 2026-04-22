@@ -21,14 +21,12 @@ async def list_suggestions(
     project_id: UUID,
     status_filter: str | None = Query(None, alias="status"),
     source_type: str | None = Query(None),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
     _access=Depends(require_project_access("viewer")),
     service: SuggestionService = Depends(get_suggestion_service),
 ):
     try:
         return await service.list_suggestions_grouped(
-            project_id, status=status_filter, source_type=source_type, skip=skip, limit=limit
+            project_id, status=status_filter, source_type=source_type
         )
     except Exception:
         logger.exception("Failed to list suggestions for project %s", project_id)

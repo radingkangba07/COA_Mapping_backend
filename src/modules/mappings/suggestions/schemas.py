@@ -20,6 +20,4 @@ class SuggestionGroupResponse(BaseModel):
 
 class SuggestionListResponse(BaseModel):
     total: int
-    skip: int
-    limit: int
     groups: list[SuggestionGroupResponse]
