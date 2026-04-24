@@ -25,9 +25,7 @@ async def list_suggestions(
     service: SuggestionService = Depends(get_suggestion_service),
 ):
     try:
-        return await service.list_suggestions_grouped(
-            project_id, status=status_filter, source_type=source_type
-        )
+        return await service.list_suggestions_grouped(project_id, status=status_filter, source_type=source_type)
     except Exception:
         logger.exception("Failed to list suggestions for project %s", project_id)
         raise

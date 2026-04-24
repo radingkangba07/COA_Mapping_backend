@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # Auth (JWT)
     jwt_secret: str = "secret"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    access_token_expire_minutes: int = 360
     refresh_token_expire_days: int = 7
 
     # NATS JetStream (required — connect_nats raises if unset or unreachable)
