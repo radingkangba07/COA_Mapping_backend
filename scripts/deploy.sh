@@ -108,7 +108,10 @@ deploy_backend() {
     fi
 
     echo "[${ENV}/Backend] Rebuilding api-service..."
-    dc build --no-cache --build-arg GITHUB_TOKEN="${GITHUB_TOKEN}" api-service
+    dc build --no-cache \
+        --build-arg GITHUB_TOKEN="${GITHUB_TOKEN}" \
+        --build-arg COA_DB_MODELS_BRANCH="${COA_DB_MODELS_BRANCH:-develop}" \
+        api-service
     dc up -d api-service
 
     echo "[${ENV}/Backend] Done."

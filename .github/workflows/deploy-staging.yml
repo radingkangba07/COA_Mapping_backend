@@ -1,0 +1,65 @@
+name: Deploy to Staging
+
+# Fires whenever a PR targeting `staging` is opened, updated, or reopened.
+# The PR's head branch is passed to the deploy script via BE_REF so the
+# staging host checks out the PR code (not `staging`).
+#
+# How it works:
+#   1. SSH into the staging host as deploy@dataportation.ai.
+#   2. cd into the backend git checkout and reset it to the PR head.
+#   3. Invoke scripts/deploy.sh FROM THE CHECKOUT so CI always runs the
+#      version of the script on the PR branch — no host-side drift.
+#
+# Staging is a shared environment. Concurrent PR pushes are serialised
+# by the concurrency group; the latest push wins.
+
+on:
+  pull_request:
+    branches: [staging]
+    types: [opened, synchronize, reopened]
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "alembic.ini"
+      - "scripts/deploy.sh"
+      - ".github/workflows/deploy-staging.yml"
+  workflow_dispatch:   # allow manual re-deploy from the Actions tab
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true   # latest PR push wins — shared env
+
+jobs:
+  deploy:
+    name: Deploy PR to staging
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      # url: https://staging.dataportation.ai   # fill in once the staging URL is known
+
+    steps:
+      - name: Trigger deploy.sh over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          # For pull_request events this is the PR head branch (develop).
+          # For workflow_dispatch it falls back to `staging`.
+          BE_REF: ${{ github.event.pull_request.head.ref || 'staging' }}
+          GH_PAT: ${{ secrets.GH_PAT_COA_DB_MODELS }}
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          # port defaults to 22 — set secrets.STAGING_SSH_PORT and wire it
+          # here if the staging host listens on a non-standard port.
+          request_pty: false          # no interactive session
+          envs: BE_REF,GH_PAT
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            echo "Deploying ref: ${BE_REF}"
+            BACKEND_DIR=/opt/coa-migration/environments/staging/backend
+            cd "${BACKEND_DIR}"
+            git fetch origin
+            git reset --hard "origin/${BE_REF}"
+            GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" COA_DB_MODELS_BRANCH="staging" bash scripts/deploy.sh staging backend
