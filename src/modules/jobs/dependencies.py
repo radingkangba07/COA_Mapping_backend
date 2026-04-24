@@ -9,6 +9,5 @@ from src.modules.jobs.service import JobService
 
 
 def get_job_service(db: AsyncSession = Depends(get_db)) -> JobService:
-    js = get_jetstream()
-    publisher = NATSPublisher(js) if js else None
+    publisher = NATSPublisher(get_jetstream())
     return JobService(job_repo=JobRepository(db), session=db, publisher=publisher)

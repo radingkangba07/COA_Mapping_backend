@@ -1,16 +1,16 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: coa_user
-      POSTGRES_PASSWORD: coa_pass
-      POSTGRES_DB: coa_migration
+      POSTGRES_USER: ${POSTGRES_USER:-coa_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-coa_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-coa_migration}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U coa_user -d coa_migration"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-coa_user} -d ${POSTGRES_DB:-coa_migration}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -24,7 +24,7 @@ services:
     volumes:
       - nats_data:/data
     healthcheck:
-      test: ["CMD", "nats-server", "--signal", "ldm"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -59,7 +59,55 @@ services:
       echo 'Bucket coa-storage created successfully'
       "
 
+  # Loki: log aggregation (indexes labels, stores JSON lines)
+  loki:
+    image: grafana/loki:2.9.4
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/config.yaml
+    volumes:
+      - ../deploy/loki/loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki_data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Promtail: tails host-side API log file and ships lines to Loki
+  promtail:
+    image: grafana/promtail:2.9.4
+    command: -config.file=/etc/promtail/config.yaml
+    volumes:
+      - ../deploy/promtail/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - ../logs:/var/log/coa:ro
+      - promtail_positions:/var/lib/promtail
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  # Grafana: LogQL UI, dashboards, alerts
+  grafana:
+    image: grafana/grafana:10.4.2
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      loki:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   nats_data:
   minio_data:
+  loki_data:
+  grafana_data:
+  promtail_positions:

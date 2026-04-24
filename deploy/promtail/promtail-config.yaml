@@ -1,0 +1,38 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /var/lib/promtail/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: coa-api
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          service: coa-api
+          env: dev
+          __path__: /var/log/coa/*.log
+
+    # Pipeline parses the JSON emitted by structlog, promotes only
+    # low-cardinality fields to labels, and keeps everything else in the log body.
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            event: event
+            status: status
+            method: method
+      - template:
+          source: status_class
+          # status may be missing on non-http_request logs — template outputs "" in that case
+          template: '{{ if .status }}{{ printf "%dxx" (div (int .status) 100) }}{{ end }}'
+      - labels:
+          level:
+          method:
+          status_class:
+          event:

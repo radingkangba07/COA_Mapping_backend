@@ -30,7 +30,7 @@ class FileResponse(BaseModel):
     content_type: str
     size_bytes: int
     status: str
-    is_deleted: bool
+    is_active: bool
     columns: dict | list | None = None
     row_count: int
     created_at: datetime

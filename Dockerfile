@@ -4,9 +4,16 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (cached layer)
+ARG GITHUB_TOKEN
+ARG COA_DB_MODELS_BRANCH=develop
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/" && \
+    sed -i "s/branch = \"develop\"/branch = \"${COA_DB_MODELS_BRANCH}\"/" pyproject.toml && \
+    uv sync --no-dev --upgrade-package coa-db-models && \
+    git config --global --unset-all url."https://${GITHUB_TOKEN}@github.com/".insteadOf
 
 # Copy application code
 COPY src/ ./src/

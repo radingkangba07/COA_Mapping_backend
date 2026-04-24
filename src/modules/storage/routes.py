@@ -4,12 +4,12 @@ import uuid as uuid_mod
 from uuid import UUID
 
 import pandas as pd
+from coa_db_models.auth.models import User
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
-from src.modules.auth.models import User
 from src.modules.projects.dependencies import require_project_access
 from src.modules.storage.dependencies import get_storage_service
 from src.modules.storage.schemas import FileListResponse, FileResponse, FileUploadResponse, SignedUrlResponse
@@ -25,7 +25,7 @@ files_router = APIRouter(prefix="/api/v1/files", tags=["files"])
 async def upload_file(
     file: UploadFile = File(...),
     project_id: UUID = Form(...),
-    file_type: str = Form("upload"),
+    file_type: str = Form("source_erp"),
     job_id: UUID | None = Form(None),
     user: User = Depends(get_current_user),
     service: StorageService = Depends(get_storage_service),
@@ -37,6 +37,7 @@ async def upload_file(
             filename=file.filename or "unknown",
             project_id=project_id,
             file_type=file_type,
+            user_id=user.id,
             uploaded_by=user.id,
             job_id=job_id,
         )
@@ -55,7 +56,7 @@ async def get_file(
     service: StorageService = Depends(get_storage_service),
 ):
     try:
-        return await service.get_file(file_id)
+        return await service.get_file(file_id, user.id)
     except AppError:
         raise
     except Exception:
@@ -70,7 +71,7 @@ async def download_file(
     service: StorageService = Depends(get_storage_service),
 ):
     try:
-        data, content_type, filename = await service.download_file(file_id)
+        data, content_type, filename = await service.download_file(file_id, user.id)
         return StreamingResponse(
             io.BytesIO(data),
             media_type=content_type,
@@ -91,7 +92,7 @@ async def get_signed_url(
     service: StorageService = Depends(get_storage_service),
 ):
     try:
-        url = await service.get_signed_url(file_id, expires_in)
+        url = await service.get_signed_url(file_id, user.id, expires_in)
         return SignedUrlResponse(
             file_id=file_id,
             signed_url=url,
@@ -114,7 +115,11 @@ async def list_project_files(
 ):
     try:
         files = await service.list_files(project_id, file_type)
-        return FileListResponse(project_id=project_id, files=files, total=len(files))
+        return FileListResponse(
+            project_id=project_id,
+            files=[FileResponse.model_validate(f) for f in files],
+            total=len(files),
+        )
     except AppError:
         raise
     except Exception:
@@ -129,7 +134,7 @@ async def delete_file(
     service: StorageService = Depends(get_storage_service),
 ):
     try:
-        await service.delete_file(file_id)
+        await service.delete_file(file_id, user.id)
         return {"success": True, "message": "File deleted"}
     except AppError:
         raise
@@ -143,8 +148,8 @@ async def files_upload(
     file: UploadFile = File(...),
     project_id: str = Query(...),
     file_type: str = Query(...),
-    source_erp: str = Query(default="unknown"),
-    target_erp: str = Query(default="unknown"),
+    source_system: str = Query(default="unknown"),
+    target_system: str = Query(default="unknown"),
     user: User = Depends(get_current_user),
     service: StorageService = Depends(get_storage_service),
 ):
@@ -172,6 +177,7 @@ async def files_upload(
             filename=filename,
             project_id=UUID(project_id),
             file_type=file_type,
+            user_id=user.id,
             uploaded_by=user.id,
         )
 
@@ -199,7 +205,7 @@ async def files_get(
     service: StorageService = Depends(get_storage_service),
 ):
     try:
-        return await service.get_file(file_id)
+        return await service.get_file(file_id, user.id)
     except AppError:
         raise
     except Exception:
@@ -215,7 +221,7 @@ async def files_get_data(
 ):
     """Download, parse, and return file row data — matches legacy response."""
     try:
-        data, _content_type, filename = await service.download_file(file_id)
+        data, _content_type, filename = await service.download_file(file_id, user.id)
 
         ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
         if ext == "csv":
@@ -251,7 +257,7 @@ async def files_download(
     service: StorageService = Depends(get_storage_service),
 ):
     try:
-        data, content_type, filename = await service.download_file(file_id)
+        data, content_type, filename = await service.download_file(file_id, user.id)
         return StreamingResponse(
             io.BytesIO(data),
             media_type=content_type,
@@ -268,12 +274,16 @@ async def files_download(
 async def files_list_project(
     project_id: UUID,
     file_type: str | None = Query(default=None),
-    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("viewer")),
     service: StorageService = Depends(get_storage_service),
 ):
     try:
         files = await service.list_files(project_id, file_type)
-        return FileListResponse(project_id=project_id, files=files, total=len(files))
+        return FileListResponse(
+            project_id=project_id,
+            files=[FileResponse.model_validate(f) for f in files],
+            total=len(files),
+        )
     except AppError:
         raise
     except Exception:
@@ -288,7 +298,7 @@ async def files_delete(
     service: StorageService = Depends(get_storage_service),
 ):
     try:
-        await service.delete_file(file_id)
+        await service.delete_file(file_id, user.id)
         return {"success": True, "message": "File deleted"}
     except AppError:
         raise

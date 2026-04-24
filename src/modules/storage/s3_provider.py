@@ -41,11 +41,12 @@ class S3Provider:
 
     def get_signed_url(self, path: str, expires_in: int = 3600) -> str | None:
         try:
-            return self.client.generate_presigned_url(
+            url: str = self.client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": self.bucket, "Key": path},
                 ExpiresIn=expires_in,
             )
+            return url
         except ClientError:
             return None
 

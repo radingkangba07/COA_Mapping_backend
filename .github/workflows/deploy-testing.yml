@@ -1,0 +1,68 @@
+name: Deploy to Testing
+
+# Fires whenever a PR targeting `develop` is opened, updated, or reopened.
+# The PR's head branch is passed to the deploy script via BE_REF so the
+# testing host checks out the PR code (not `develop`).
+#
+# How it works:
+#   1. SSH into the testing host.
+#   2. cd into the existing backend git checkout and reset it to the PR head.
+#   3. Invoke scripts/deploy.sh FROM THE CHECKOUT (not from /opt/coa-migration/).
+#      This means CI always runs whatever version of the script is on the PR
+#      branch — no host-side script to maintain, no drift between the repo
+#      copy and the host copy.
+#
+# Testing is a single shared environment. If two PRs push concurrently, the
+# concurrency group cancels the in-flight deploy so the latest PR wins.
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, synchronize, reopened]
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "alembic.ini"
+      - "scripts/deploy.sh"
+      - ".github/workflows/deploy-testing.yml"
+  workflow_dispatch:   # allow manual re-deploy from the Actions tab
+
+concurrency:
+  group: deploy-testing
+  cancel-in-progress: true   # latest PR push wins — shared env
+
+jobs:
+  deploy:
+    name: Deploy PR to testing
+    runs-on: ubuntu-latest
+    environment:
+      name: testing
+      # url: https://testing.example.com   # fill in once the testing URL is known
+
+    steps:
+      - name: Trigger deploy.sh over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          # For pull_request events this is the PR head branch (same-repo PRs
+          # only — forks cannot access secrets, so this wouldn't run for them
+          # anyway). For workflow_dispatch it falls back to `develop`.
+          BE_REF: ${{ github.event.pull_request.head.ref || 'develop' }}
+          GH_PAT: ${{ secrets.GH_PAT_COA_DB_MODELS }}
+        with:
+          host: ${{ secrets.TESTING_SSH_HOST }}
+          username: ${{ secrets.TESTING_SSH_USER }}
+          key: ${{ secrets.TESTING_SSH_KEY }}
+          # port defaults to 22 — set secrets.TESTING_SSH_PORT and wire it
+          # here if the testing host listens on a non-standard port.
+          envs: BE_REF,GH_PAT
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            echo "Deploying ref: ${BE_REF}"
+            BACKEND_DIR=/opt/coa-migration/environments/testing/backend
+            cd "${BACKEND_DIR}"
+            git fetch origin
+            git reset --hard "origin/${BE_REF}"
+            # invoke via `bash` so file mode in git index doesn't matter
+            GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" bash scripts/deploy.sh testing backend

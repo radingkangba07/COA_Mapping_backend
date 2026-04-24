@@ -18,11 +18,12 @@ def test_loads_yaml(erp_service: ERPConfigService):
     assert erp_service.systems is not None
 
 
-def test_returns_all_six_systems(erp_service: ERPConfigService):
+def test_returns_all_systems(erp_service: ERPConfigService):
     systems = erp_service.get_all_systems()
-    assert len(systems) == 6
+    assert len(systems) == 9
     ids = {s["id"] for s in systems}
-    assert ids == {"sap", "oracle_netsuite", "microsoft_dynamics", "quickbooks", "sage", "xero"}
+    expected = {"sap", "oracle_netsuite", "microsoft_dynamics", "quickbooks", "sage", "xero", "pastel", "odoo", "zoho"}
+    assert ids == expected
 
 
 def test_get_system_returns_name(erp_service: ERPConfigService):

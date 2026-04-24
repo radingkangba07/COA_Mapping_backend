@@ -5,11 +5,12 @@ from pathlib import Path
 from uuid import UUID
 
 import pandas as pd
+from coa_db_models.storage.models import File
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.exceptions import NotFoundError
-from src.modules.storage.models import File
+from src.modules.projects.dependencies import authorize_for_resource, ensure_project_access
 from src.modules.storage.protocols import ObjectStoreProtocol
 from src.modules.storage.repository import FileRepository
 from src.modules.storage.s3_provider import MIME_TYPES
@@ -24,15 +25,15 @@ class StorageService:
         self.session = session
 
     def _build_storage_path(
-        self, company_slug: str, project_id: UUID, filename: str, file_type: str, job_id: UUID | None = None
+        self, org_slug: str, project_id: UUID, filename: str, file_type: str, job_id: UUID | None = None
     ) -> str:
         settings = get_settings()
         ext = Path(filename).suffix
         unique_name = f"{uuid_mod.uuid4()}{ext}"
         if job_id:
-            return f"{settings.app_name}/company/{company_slug}/project/{project_id}/jobs/{job_id}/{unique_name}"
+            return f"{settings.app_name}/org/{org_slug}/project/{project_id}/jobs/{job_id}/{unique_name}"
         folder = "artifacts" if file_type == "artifact" else "uploads"
-        return f"{settings.app_name}/company/{company_slug}/project/{project_id}/{folder}/{unique_name}"
+        return f"{settings.app_name}/org/{org_slug}/project/{project_id}/{folder}/{unique_name}"
 
     def _detect_content_type(self, filename: str) -> str:
         ext = Path(filename).suffix.lower()
@@ -44,12 +45,14 @@ class StorageService:
         filename: str,
         project_id: UUID,
         file_type: str,
-        company_slug: str = "default",
+        user_id: UUID,
+        org_slug: str = "default",
         uploaded_by: UUID | None = None,
         job_id: UUID | None = None,
     ) -> File:
+        await ensure_project_access(self.session, user_id, project_id, "editor")
         content_type = self._detect_content_type(filename)
-        storage_path = self._build_storage_path(company_slug, project_id, filename, file_type, job_id)
+        storage_path = self._build_storage_path(org_slug, project_id, filename, file_type, job_id)
 
         # Upload to S3
         if self.store:
@@ -88,35 +91,43 @@ class StorageService:
         logger.info("File '%s' uploaded to project %s (%d bytes)", filename, project_id, len(file_data))
         return file
 
-    async def download_file(self, file_id: UUID) -> tuple[bytes, str, str]:
+    async def download_file(self, file_id: UUID, user_id: UUID) -> tuple[bytes, str, str]:
         file = await self.file_repo.get_by_id(file_id)
-        if not file or file.is_deleted:
+        await authorize_for_resource(file, self.session, user_id, "viewer", "File not found")
+        assert file is not None
+        if not file.is_active:
             raise NotFoundError("File not found")
         if not self.store:
             raise NotFoundError("Storage not available")
         data, content_type = self.store.get_object(file.storage_path)
         return data, content_type, file.original_filename
 
-    async def get_signed_url(self, file_id: UUID, expires_in: int = 3600) -> str | None:
+    async def get_signed_url(self, file_id: UUID, user_id: UUID, expires_in: int = 3600) -> str | None:
         file = await self.file_repo.get_by_id(file_id)
-        if not file or file.is_deleted:
+        await authorize_for_resource(file, self.session, user_id, "viewer", "File not found")
+        assert file is not None
+        if not file.is_active:
             raise NotFoundError("File not found")
         if not self.store:
             return None
         return self.store.get_signed_url(file.storage_path, expires_in)
 
-    async def get_file(self, file_id: UUID) -> File:
+    async def get_file(self, file_id: UUID, user_id: UUID) -> File:
         file = await self.file_repo.get_by_id(file_id)
-        if not file or file.is_deleted:
+        await authorize_for_resource(file, self.session, user_id, "viewer", "File not found")
+        assert file is not None
+        if not file.is_active:
             raise NotFoundError("File not found")
         return file
 
     async def list_files(self, project_id: UUID, file_type: str | None = None) -> list[File]:
         return await self.file_repo.list_by_project(project_id, file_type)
 
-    async def delete_file(self, file_id: UUID) -> None:
+    async def delete_file(self, file_id: UUID, user_id: UUID) -> None:
         file = await self.file_repo.get_by_id(file_id)
-        if not file or file.is_deleted:
+        await authorize_for_resource(file, self.session, user_id, "editor", "File not found")
+        assert file is not None
+        if not file.is_active:
             raise NotFoundError("File not found")
         await self.file_repo.soft_delete(file_id)
         # S3 delete happens immediately. To support undo/recovery in the future,

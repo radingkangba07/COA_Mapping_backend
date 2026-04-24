@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
@@ -22,22 +23,24 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     settings = get_settings()
     to_encode = data.copy()
     expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
-    to_encode.update({"exp": expire, "type": "access"})
-    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    to_encode.update({"exp": expire, "type": "access", "jti": str(uuid.uuid4())})
+    token: str = jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return token
 
 
 def create_refresh_token(data: dict) -> str:
     settings = get_settings()
     to_encode = data.copy()
     expire = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
-    to_encode.update({"exp": expire, "type": "refresh"})
-    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    to_encode.update({"exp": expire, "type": "refresh", "jti": str(uuid.uuid4())})
+    token: str = jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return token
 
 
 def decode_token(token: str) -> dict:
     settings = get_settings()
     try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        payload: dict = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except JWTError as e:
         raise InvalidTokenError(str(e)) from e
     if "sub" not in payload or "type" not in payload:

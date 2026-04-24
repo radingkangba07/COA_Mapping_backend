@@ -1,14 +1,13 @@
 [project]
 name = "coa-migration-api"
 version = "3.0.0"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 description = "Chart of Accounts Migration Platform — modular monolith backend"
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.25",
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.29",
-    "alembic>=1.13",
     "pydantic>=2.12",
     "pydantic-settings>=2.4",
     "python-jose[cryptography]>=3.3",
@@ -22,6 +21,11 @@ dependencies = [
     "openpyxl>=3.1",
     "pyyaml>=6.0",
     "httpx>=0.27",
+    "email-validator>=2.3.0",
+    "resend>=2.27.0",
+    "jinja2>=3.1.6",
+    "coa-db-models",
+    "structlog>=25.5.0",
 ]
 
 [project.optional-dependencies]
@@ -51,6 +55,9 @@ dev-dependencies = [
     "ruff>=0.3",
     "mypy>=1.8",
 ]
+
+[tool.uv.sources]
+coa-db-models = { git = "https://github.com/bhavna-linkedrp/coa-db-models.", branch = "develop" }
 
 # ── Ruff (replaces black, isort, flake8) ──────────────────────────────────────
 
@@ -84,7 +91,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "src/tests/**" = ["S101", "S105", "S106", "T20"]
-"src/migrations/**" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["src"]
@@ -96,7 +102,7 @@ indent-style = "space"
 # ── Mypy (static type checking — catches errors without running code) ─────────
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = false                   # start permissive, tighten over time
 warn_return_any = true
 warn_unused_configs = true
@@ -104,9 +110,12 @@ warn_unused_ignores = true
 check_untyped_defs = true        # type-check inside untyped functions
 disallow_untyped_decorators = true
 no_implicit_optional = true
+exclude = [
+    "src/tests/",                # tests rely on loose fixtures; not type-checked
+]
 
 [[tool.mypy.overrides]]
-module = ["nats.*", "boto3.*", "botocore.*", "jose.*", "rapidfuzz.*"]
+module = ["nats.*", "boto3.*", "botocore.*", "jose.*", "rapidfuzz.*", "resend.*", "yaml"]
 ignore_missing_imports = true
 
 # ── Pytest ────────────────────────────────────────────────────────────────────

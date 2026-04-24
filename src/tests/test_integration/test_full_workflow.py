@@ -1,20 +1,25 @@
 """End-to-end integration test covering full COA migration workflow.
 
 Steps:
-1) Login (auto-create user) → 2) Create company → 3) Create project (auto-admin)
-4) List ERP systems → 5) Fuzzy match columns → 6) Hierarchical mapping
-7) Bulk save mappings (project status → in_progress) → 8) Get stats
-9) Export as Excel → 10) List project files
-11) Create job (sync fallback) → 12) Dashboard → 13) Grant access
+1) Register + verify user → 2) Login via magic link → 3) Create company
+4) Create project (auto-admin) → 5) List ERP systems → 6) Fuzzy match columns
+7) Hierarchical mapping → 8) Bulk save mappings → 9) Get stats
+10) Export as Excel → 11) List project files
+12) Create job (NATS publisher mocked) → 13) Grant access
 14) Viewer can read but not edit → 15) Revoke access
 """
+
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from src.core import nats_client
 from src.core.config import get_settings
 from src.core.database import get_db
+from src.core.security import create_access_token
 from src.main import app
+from src.modules.auth.repository import OrganizationRepository, UserRepository
 
 
 @pytest.mark.asyncio
@@ -28,34 +33,42 @@ async def test_full_workflow(db_session):
 
     app.dependency_overrides[get_settings] = get_test_settings
 
+    # NATS is required in production but not run in tests — inject a mock JetStream.
+    mock_js = MagicMock()
+    mock_js.publish = AsyncMock()
+    nats_client._js = mock_js
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # 1) Login (auto-creates user)
+        # 1) Register + verify user
         resp = await client.post(
-            "/api/v1/auth/login",
-            json={"user_id": "workflow"},
-        )
-        assert resp.status_code == 200
-        tokens = resp.json()
-        auth = {"Authorization": f"Bearer {tokens['token']}"}
-
-        # 2) Create company
-        resp = await client.post(
-            "/api/v1/companies",
-            json={"slug": "workflow-co", "name": "Workflow Company"},
-            headers=auth,
+            "/api/v1/auth/register",
+            json={"name": "Workflow User", "email": "workflow@example.com", "org_name": "Workflow Org"},
         )
         assert resp.status_code == 201
+
+        user_repo = UserRepository(db_session)
+        user = await user_repo.get_by_email("workflow@example.com")
+        await user_repo.verify_user(user.id)
+        await db_session.commit()
+
+        # Generate access token for authenticated requests
+        access_token = create_access_token(data={"sub": str(user.id)})
+        auth = {"Authorization": f"Bearer {access_token}"}
+
+        # 2) Get org created during registration
+        org_repo = OrganizationRepository(db_session)
+        org = await org_repo.get_by_name("Workflow Org")
+        assert org is not None
 
         # 3) Create project (auto-admin)
         resp = await client.post(
             "/api/v1/projects",
             json={
                 "name": "Workflow Project",
-                "company_id": "workflow-proj-co",
-                "company_name": "Workflow Proj Co",
-                "source_erp": "quickbooks",
-                "target_erp": "xero",
+                "org_id": str(org.id),
+                "source_system": "quickbooks",
+                "target_system": "xero",
             },
             headers=auth,
         )
@@ -73,14 +86,14 @@ async def test_full_workflow(db_session):
         resp = await client.get("/api/v1/erp-systems")
         assert resp.status_code == 200
         erp_systems = resp.json()
-        assert len(erp_systems) == 6
+        assert len(erp_systems) == 9
 
         # 5) Fuzzy match columns
         resp = await client.post(
             "/api/v1/mappings/fuzzy-match",
             json={
                 "source_columns": ["Account Name", "Account Type", "Account Number"],
-                "target_erp": "xero",
+                "target_system": "xero",
                 "threshold": 60,
             },
             headers=auth,
@@ -89,24 +102,21 @@ async def test_full_workflow(db_session):
         fuzzy = resp.json()
         assert len(fuzzy["mappings"]) == 3
 
-        # 6) Hierarchical mapping
+        # 6) Hierarchical mapping — creates a job (NATS publisher mocked in tests).
         resp = await client.post(
             "/api/v1/mappings/hierarchical",
             json={
-                "source_data": [
-                    {"Account Type": "Income", "Account Name": "Sales Revenue", "Account Number": "4000"},
-                    {"Account Type": "Income", "Account Name": "Service Revenue", "Account Number": "4100"},
-                    {"Account Type": "Expense", "Account Name": "Office Rent", "Account Number": "5000"},
-                ],
-                "source_erp": "quickbooks",
-                "target_erp": "xero",
+                "project_id": project_id,
+                "source_file_id": "00000000-0000-0000-0000-000000000001",
+                "target_file_id": "00000000-0000-0000-0000-000000000002",
             },
             headers=auth,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         hier = resp.json()
-        assert hier["total_accounts"] == 3
-        assert hier["total_types"] == 2
+        assert hier["project_id"] == project_id
+        assert hier["status"] == "queued"
+        assert "job_id" in hier
 
         # 7) Bulk save mappings
         resp = await client.post(
@@ -158,7 +168,7 @@ async def test_full_workflow(db_session):
         resp = await client.get(f"/api/v1/storage/project/{project_id}/files", headers=auth)
         assert resp.status_code == 200
 
-        # 11) Create job (sync fallback)
+        # 11) Create job — published to NATS (mocked), starts in queued state.
         resp = await client.post(
             "/api/v1/jobs",
             json={"project_id": project_id, "job_type": "account_matching"},
@@ -166,41 +176,31 @@ async def test_full_workflow(db_session):
         )
         assert resp.status_code == 201
         job = resp.json()
-        assert job["status"] == "completed"
+        assert job["status"] == "queued"
 
-        # 12) Dashboard
-        resp = await client.get("/api/v1/dashboard/companies", headers=auth)
-        assert resp.status_code == 200
-        dashboard = resp.json()
-        assert "companies" in dashboard
-        assert len(dashboard["companies"]) >= 1
-        # Find our project's company
-        found = False
-        for company in dashboard["companies"]:
-            for p in company["projects"]:
-                if p["id"] == project_id:
-                    assert p["mapping_count"] == 2
-                    found = True
-        assert found, "Project not found in dashboard"
-
-        # 13) Login as second user and grant viewer access
+        # 13) Register + verify second user and grant viewer access
         resp = await client.post(
-            "/api/v1/auth/login",
-            json={"user_id": "viewer"},
+            "/api/v1/auth/register",
+            json={"name": "Viewer User", "email": "viewer@example.com", "org_name": "Viewer Org"},
         )
-        assert resp.status_code == 200
-        viewer_uuid = resp.json()["user"]["id"]
+        assert resp.status_code == 201
+
+        viewer = await user_repo.get_by_email("viewer@example.com")
+        await user_repo.verify_user(viewer.id)
+        await db_session.commit()
+        viewer_uuid = str(viewer.id)
 
         resp = await client.post(
             f"/api/v1/projects/{project_id}/access",
-            json={"user_id": viewer_uuid, "permission": "viewer"},
+            json={"email": "viewer@example.com", "permission": "viewer"},
             headers=auth,
         )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
-        # Login as viewer
-        viewer_auth = {"Authorization": "Bearer mock-token-viewer"}
+        # Viewer auth
+        viewer_token = create_access_token(data={"sub": viewer_uuid})
+        viewer_auth = {"Authorization": f"Bearer {viewer_token}"}
 
         # 14) Viewer can read
         resp = await client.get(f"/api/v1/projects/{project_id}", headers=viewer_auth)

@@ -1,14 +1,20 @@
 import io
 import logging
+from collections import defaultdict
 from uuid import UUID
 
 import pandas as pd
+from coa_db_models.mappings.models import CoaMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import NotFoundError
-from src.modules.mappings.models import Mapping
 from src.modules.mappings.repository import MappingRepository
-from src.modules.mappings.schemas import MappingBulkSaveResponse, MappingCreate, MappingStatsResponse, MappingUpdate
+from src.modules.mappings.schemas import MappingBulkSaveResponse, MappingStatsResponse, MappingUpdate, MappingUpsert
+from src.modules.projects.dependencies import (
+    authorize_for_resource,
+    authorize_for_resources,
+    ensure_project_access,
+)
 from src.modules.projects.repository import ProjectRepository
 
 logger = logging.getLogger(__name__)
@@ -25,15 +31,28 @@ class MappingService:
         self.project_repo = project_repo
         self.session = session
 
-    async def bulk_save(self, project_id: UUID, mappings: list[MappingCreate]) -> MappingBulkSaveResponse:
-        count = await self.mapping_repo.bulk_replace(project_id, mappings)
+    async def bulk_save(self, project_id: UUID, mappings: list[MappingUpsert]) -> MappingBulkSaveResponse:
+        result = await self.mapping_repo.bulk_upsert(project_id, mappings)
+        if result["missing_ids"]:
+            raise NotFoundError(f"Mappings not found in project {project_id}: {result['missing_ids']}")
         # Auto-transition draft → in_progress
         project = await self.project_repo.get_by_id(project_id)
         if project and project.status == "draft":
             await self.project_repo.update_status(project_id, "in_progress")
         await self.session.commit()
-        logger.info("Bulk saved %d mappings for project %s", count, project_id)
-        return MappingBulkSaveResponse(mapping_count=count, project_id=project_id)
+        total = result["inserted"] + result["updated"]
+        logger.info(
+            "Upserted mappings for project %s (inserted=%d, updated=%d)",
+            project_id,
+            result["inserted"],
+            result["updated"],
+        )
+        return MappingBulkSaveResponse(
+            mapping_count=total,
+            project_id=project_id,
+            inserted=result["inserted"],
+            updated=result["updated"],
+        )
 
     async def list_mappings(
         self,
@@ -42,34 +61,80 @@ class MappingService:
         source_type: str | None = None,
         skip: int = 0,
         limit: int = 50,
-    ) -> list[Mapping]:
+    ) -> list[CoaMapping]:
         return await self.mapping_repo.list_by_project(project_id, status, source_type, skip, limit)
 
-    async def update_mapping(self, mapping_id: UUID, data: MappingUpdate) -> Mapping:
+    async def list_mappings_grouped(
+        self,
+        project_id: UUID,
+        status: str | None = None,
+        source_type: str | None = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> list[dict]:
+        flat_mappings = await self.mapping_repo.list_by_project(project_id, status, source_type, skip, limit)
+
+        groups: dict[tuple, list] = defaultdict(list)
+        group_scores: dict[tuple, list[float]] = defaultdict(list)
+
+        for m in flat_mappings:
+            key = (m.source_account_type or "", m.target_account_type or "")
+            score = m.confidence_score
+            groups[key].append(
+                {
+                    "id": str(m.id),
+                    "source_number": m.source_account_number or "",
+                    "source_name": m.source_account_name,
+                    "target_name": m.target_account_name or "",
+                    "score": score,
+                    "remark": m.mapping_source,
+                    "mapping_source": m.mapping_source,
+                    "status": m.mapping_status,
+                }
+            )
+            group_scores[key].append(score)
+
+        return [
+            {
+                "source_type": source_type_val,
+                "target_type": target_type_val,
+                "confidence": round(sum(scores) / len(scores), 1) if scores else 0,
+                "accounts": groups[(source_type_val, target_type_val)],
+            }
+            for (source_type_val, target_type_val), scores in group_scores.items()
+        ]
+
+    async def update_mapping(self, mapping_id: UUID, data: MappingUpdate, user_id: UUID) -> CoaMapping:
         mapping = await self.mapping_repo.get_by_id(mapping_id)
-        if not mapping:
-            raise NotFoundError("Mapping not found")
+        await authorize_for_resource(mapping, self.session, user_id, "editor", "Mapping not found")
+        assert mapping is not None
         update_data = data.model_dump(exclude_unset=True)
-        update_data["remark"] = "user"
+        update_data["mapping_source"] = "user"
         mapping = await self.mapping_repo.update(mapping, update_data)
         await self.session.commit()
         return mapping
 
-    async def bulk_update_status(self, mapping_ids: list[UUID], updates: MappingUpdate) -> int:
+    async def bulk_update_status(self, mapping_ids: list[UUID], updates: MappingUpdate, user_id: UUID) -> int:
         update_data = updates.model_dump(exclude_unset=True)
-        if "status" not in update_data:
+        if "mapping_status" not in update_data:
             return 0
-        count = await self.mapping_repo.bulk_update_status(mapping_ids, update_data["status"])
+        rows = await self.mapping_repo.get_by_ids(mapping_ids)
+        await authorize_for_resources(rows, self.session, user_id, "editor")
+        count = await self.mapping_repo.bulk_update_status(mapping_ids, update_data["mapping_status"])
         await self.session.commit()
         return count
 
-    async def delete_mapping(self, mapping_id: UUID) -> None:
-        await self.mapping_repo.delete(mapping_id)
+    async def delete_mapping(self, mapping_id: UUID, user_id: UUID) -> None:
+        mapping = await self.mapping_repo.get_by_id(mapping_id)
+        await authorize_for_resource(mapping, self.session, user_id, "editor", "Mapping not found")
+        assert mapping is not None
+        await self.mapping_repo.update(mapping, {"is_active": False})
         await self.session.commit()
 
     async def bulk_update_by_score(
-        self, project_id: UUID, min_score: float, max_score: float, new_status: str
+        self, project_id: UUID, min_score: float, max_score: float, new_status: str, user_id: UUID
     ) -> dict:
+        await ensure_project_access(self.session, user_id, project_id, "editor")
         result = await self.mapping_repo.update_by_score_range(project_id, min_score, max_score, new_status)
         await self.session.commit()
         return {"matched": result["matched"], "modified": result["modified"], "status": new_status}
@@ -91,9 +156,11 @@ class MappingService:
                     "Target Account Name": m.target_account_name or "",
                     "Target Account Type": m.target_account_type or "",
                     "Confidence Score": m.confidence_score,
-                    "Status": m.status,
-                    "Remark": m.remark,
+                    "Status": m.mapping_status,
+                    "Source": m.mapping_source,
                     "Notes": m.notes or "",
+                    "approval_scope": "",
+                    "project_id": str(m.project_id),
                 }
             )
         df = pd.DataFrame(data)

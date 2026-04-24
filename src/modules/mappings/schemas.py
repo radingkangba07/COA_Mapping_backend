@@ -1,21 +1,32 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
-class MappingCreate(BaseModel):
+class MappingUpsert(BaseModel):
+    id: uuid.UUID | None = None
+    suggestion_id: uuid.UUID | None = None
     source_account_number: str | None = None
-    source_account_name: str
+    source_account_name: str | None = None
     source_account_type: str | None = None
     target_account_number: str | None = None
     target_account_name: str | None = None
     target_account_type: str | None = None
-    confidence_score: float = 0.0
-    status: str = "suggested"
-    remark: str = "ai"
-    source_row_data: dict | None = None
+    confidence_score: float | None = None
+    mapping_status: str | None = None
+    mapping_source: str | None = None
+    source_to_map: dict | None = None
     notes: str | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def _require_name_for_inserts(self) -> "MappingUpsert":
+        # Inserts need source_account_name unless suggestion_id is given
+        # (backend copies from the suggestion row in that case).
+        if self.id is None and self.suggestion_id is None and self.source_account_name is None:
+            raise ValueError("source_account_name is required when id and suggestion_id are not provided")
+        return self
 
 
 class MappingUpdate(BaseModel):
@@ -26,8 +37,8 @@ class MappingUpdate(BaseModel):
     target_account_name: str | None = None
     target_account_type: str | None = None
     confidence_score: float | None = None
-    status: str | None = None
-    remark: str | None = None
+    mapping_status: str | None = None
+    mapping_source: str | None = None
     notes: str | None = None
 
 
@@ -41,9 +52,9 @@ class MappingResponse(BaseModel):
     target_account_name: str | None = None
     target_account_type: str | None = None
     confidence_score: float
-    status: str
-    remark: str
-    source_row_data: dict | None = None
+    mapping_status: str
+    mapping_source: str
+    source_to_map: dict | None = None
     notes: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -55,6 +66,8 @@ class MappingBulkSaveResponse(BaseModel):
     success: bool = True
     mapping_count: int
     project_id: uuid.UUID
+    inserted: int = 0
+    updated: int = 0
 
 
 class MappingBulkUpdate(BaseModel):
@@ -71,25 +84,22 @@ class MappingStatsResponse(BaseModel):
 
 
 class HierarchicalMappingRequest(BaseModel):
-    source_data: list[dict]
-    target_data: list[dict] | None = None
-    source_erp: str
-    target_erp: str
+    project_id: uuid.UUID
+    source_file_id: uuid.UUID
+    target_file_id: uuid.UUID
+    mapping_file_id: uuid.UUID | None = None
+    account_type_mapping_file_id: uuid.UUID | None = None
 
 
 class HierarchicalMappingResponse(BaseModel):
-    type_column: str | None = None
-    name_column: str | None = None
-    number_column: str | None = None
-    target_types: list = []
-    grouped_mappings: list = []
-    total_accounts: int = 0
-    total_types: int = 0
+    job_id: uuid.UUID
+    project_id: uuid.UUID
+    status: str
 
 
 class FuzzyMatchRequest(BaseModel):
     source_columns: list[str]
-    target_erp: str
+    target_system: str
     threshold: int = 60
 
 

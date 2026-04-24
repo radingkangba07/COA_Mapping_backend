@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 
 import yaml
 
@@ -19,10 +20,10 @@ class ERPConfigService:
         system = self.systems.get(erp_id)
         if not system:
             return []
-        return system.get("account_types", [])
+        return cast(list[str], system.get("account_types", []))
 
     def get_sample_data(self, erp_id: str) -> list[dict]:
         system = self.systems.get(erp_id)
         if not system:
             return []
-        return system.get("sample_data", [])
+        return cast(list[dict], system.get("sample_data", []))

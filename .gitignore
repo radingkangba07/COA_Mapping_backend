@@ -29,3 +29,6 @@ screenshots/
 
 # Specs
 /specs
+
+# Local log capture for Promtail (see docs/observability-dev.md)
+/logs/

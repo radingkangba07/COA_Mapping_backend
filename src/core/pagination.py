@@ -1,11 +1,7 @@
-from typing import Generic, TypeVar
-
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
-
-T = TypeVar("T")
 
 
 class PaginationParams(BaseModel):
@@ -13,7 +9,7 @@ class PaginationParams(BaseModel):
     limit: int = Field(default=50, ge=1, le=100)
 
 
-class PaginatedResponse(BaseModel, Generic[T]):
+class PaginatedResponse[T](BaseModel):
     items: list[T]
     total: int
     skip: int

@@ -1,17 +1,18 @@
 """Integration tests for mappings routes — T051."""
 
+from typing import Any
+
 import pytest
 from httpx import AsyncClient
 
 
-async def _create_project(client: AsyncClient) -> str:
+async def _create_project(client: AsyncClient, org_id: str) -> str:
     """Helper to create a project and return its ID."""
     resp = await client.post(
         "/api/v1/projects",
         json={
             "name": "Mapping Test Project",
-            "company_id": "test-mapping-co",
-            "company_name": "Test Mapping Co",
+            "org_id": org_id,
         },
     )
     assert resp.status_code == 201
@@ -19,8 +20,8 @@ async def _create_project(client: AsyncClient) -> str:
 
 
 @pytest.mark.asyncio
-async def test_bulk_save_mappings(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
+async def test_bulk_save_mappings(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     mappings = [
         {
             "source_account_name": "Sales Revenue",
@@ -30,7 +31,7 @@ async def test_bulk_save_mappings(authenticated_client: AsyncClient):
             "target_account_number": "400",
             "target_account_type": "Revenue",
             "confidence_score": 95.0,
-            "status": "suggested",
+            "mapping_status": "suggested",
         },
     ]
     resp = await authenticated_client.post(
@@ -44,38 +45,48 @@ async def test_bulk_save_mappings(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_bulk_save_replaces_existing(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
-    # First save
+async def test_bulk_save_upserts(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
+    # First save — two INSERTs (no id)
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
-        json=[{"source_account_name": "Old", "status": "suggested", "confidence_score": 50}],
+        json=[
+            {"source_account_name": "A", "mapping_status": "suggested", "confidence_score": 50},
+            {"source_account_name": "B", "mapping_status": "suggested", "confidence_score": 60},
+        ],
     )
-    # Second save replaces
+    list_resp = await authenticated_client.get(f"/api/v1/mappings/project/{project_id}")
+    accounts = [a for g in list_resp.json() for a in g["accounts"]]
+    assert len(accounts) == 2
+    existing_id = accounts[0]["id"]
+
+    # Second save — UPDATE one + INSERT one
     resp = await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
         json=[
-            {"source_account_name": "New1", "status": "suggested", "confidence_score": 80},
-            {"source_account_name": "New2", "status": "suggested", "confidence_score": 90},
+            {"id": existing_id, "target_account_name": "Updated", "mapping_status": "approved"},
+            {"source_account_name": "C", "mapping_status": "suggested", "confidence_score": 70},
         ],
     )
-    assert resp.json()["mapping_count"] == 2
+    body = resp.json()
+    assert body["mapping_count"] == 2
+    assert body["inserted"] == 1
+    assert body["updated"] == 1
 
-    # List should only have the new ones (grouped format)
+    # List should now have 3 total (original 2 + 1 new)
     list_resp = await authenticated_client.get(f"/api/v1/mappings/project/{project_id}")
-    groups = list_resp.json()
-    total_accounts = sum(len(g["accounts"]) for g in groups)
-    assert total_accounts == 2
+    accounts = [a for g in list_resp.json() for a in g["accounts"]]
+    assert len(accounts) == 3
 
 
 @pytest.mark.asyncio
-async def test_list_mappings_with_filters(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
+async def test_list_mappings_with_filters(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
         json=[
-            {"source_account_name": "A", "status": "suggested", "confidence_score": 80},
-            {"source_account_name": "B", "status": "approved", "confidence_score": 90},
+            {"source_account_name": "A", "mapping_status": "suggested", "confidence_score": 80},
+            {"source_account_name": "B", "mapping_status": "approved", "confidence_score": 90},
         ],
     )
     resp = await authenticated_client.get(
@@ -90,13 +101,13 @@ async def test_list_mappings_with_filters(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_mapping_stats(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
+async def test_mapping_stats(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
         json=[
-            {"source_account_name": "A", "status": "suggested", "confidence_score": 80},
-            {"source_account_name": "B", "status": "approved", "confidence_score": 90},
+            {"source_account_name": "A", "mapping_status": "suggested", "confidence_score": 80},
+            {"source_account_name": "B", "mapping_status": "approved", "confidence_score": 90},
         ],
     )
     resp = await authenticated_client.get(f"/api/v1/mappings/project/{project_id}/stats")
@@ -107,11 +118,11 @@ async def test_mapping_stats(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_export_mappings_excel(authenticated_client: AsyncClient):
-    project_id = await _create_project(authenticated_client)
+async def test_export_mappings_excel(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     await authenticated_client.post(
         f"/api/v1/mappings/project/{project_id}",
-        json=[{"source_account_name": "Export", "status": "suggested", "confidence_score": 80}],
+        json=[{"source_account_name": "Export", "mapping_status": "suggested", "confidence_score": 80}],
     )
     resp = await authenticated_client.post(f"/api/v1/mappings/project/{project_id}/export")
     assert resp.status_code == 200
@@ -124,7 +135,7 @@ async def test_fuzzy_match_endpoint(authenticated_client: AsyncClient):
         "/api/v1/mappings/fuzzy-match",
         json={
             "source_columns": ["Name", "Type"],
-            "target_erp": "xero",
+            "target_system": "xero",
             "threshold": 60,
         },
     )
@@ -135,19 +146,18 @@ async def test_fuzzy_match_endpoint(authenticated_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_hierarchical_mapping_endpoint(authenticated_client: AsyncClient):
+async def test_hierarchical_mapping_endpoint(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id = await _create_project(authenticated_client, seed_user["org_id"])
     resp = await authenticated_client.post(
         "/api/v1/mappings/hierarchical",
         json={
-            "source_data": [
-                {"Account Type": "Revenue", "Account Name": "Sales", "Account Number": "4000"},
-                {"Account Type": "Expense", "Account Name": "Rent", "Account Number": "5000"},
-            ],
-            "source_erp": "quickbooks",
-            "target_erp": "xero",
+            "project_id": project_id,
+            "source_file_id": "00000000-0000-0000-0000-000000000001",
+            "target_file_id": "00000000-0000-0000-0000-000000000002",
         },
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 201
     data = resp.json()
-    assert data["total_accounts"] == 2
-    assert data["total_types"] == 2
+    assert data["project_id"] == project_id
+    assert data["status"] == "queued"
+    assert "job_id" in data

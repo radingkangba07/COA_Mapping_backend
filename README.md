@@ -6,149 +6,93 @@ Backend for the Chart of Accounts Migration Platform — helps organizations mig
 
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
-- PostgreSQL 15+
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (optional, for NATS and MinIO)
+- PostgreSQL 15+ (with pgvector extension)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (required for NATS)
 
 ## Quick Start
 
-### 1. Install dependencies
+### 1. Clone the repo
+
+```bash
+git clone <repo-url>
+cd COA_Mapping_backend_V0
+```
+
+### 2. Install dependencies
 
 ```bash
 uv sync --dev
 ```
 
-### 2. Set up PostgreSQL
-
-Create the database:
+### 3. Set up PostgreSQL
 
 ```bash
 psql -U your_username -d postgres -c "CREATE DATABASE coa_migration"
+psql -U your_username -d coa_migration -c "CREATE EXTENSION IF NOT EXISTS vector"
 ```
 
-### 3. Configure environment
-
-Copy the example and update:
+### 4. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Update `DATABASE_URL` in `.env` with your PostgreSQL credentials:
+`.env.example` is the full list of vars the app reads — copy it, then at minimum update:
+
+- `DATABASE_URL` — your Postgres URL
+- `JWT_SECRET` — set a random string (the default is `change-me-...`)
+
+Everything else (NATS, S3/MinIO, CORS, `APP_URL`) ships with working local-dev defaults.
+
+**Magic-link login needs Resend.** The auth flow at `POST /api/v1/auth/login` emails a sign-in link via [Resend](https://resend.com). Without `RESEND_API_KEY` set, the endpoint returns success but no email is sent. Add to `.env` if you want to actually log in:
 
 ```
-DATABASE_URL=postgresql+asyncpg://your_username@localhost:5432/coa_migration
+RESEND_API_KEY=re_xxx
+RESEND_FROM_EMAIL=noreply@yourdomain.com
 ```
 
-### 4. Run database migrations
+### 5. Run database migrations
+
+Migrations are managed in the [coa-db-models](https://github.com/bhavna-linkedrp/coa-db-models.) repo. Clone it and run:
 
 ```bash
+cd ../coa-db-models
 uv run alembic upgrade head
 ```
 
-This creates all tables. To generate a new migration after model changes:
-
-```bash
-uv run alembic revision --autogenerate -m "description of change"
-```
-
-### 5. Run the server
-
-```bash
-uv run uvicorn src.main:app --reload --port 8001
-```
-
-API docs available at http://localhost:8001/docs
-
-### 6. Seed demo data (optional)
-
-Populates the database with sample users, companies, projects, and mappings:
-
-```bash
-uv run python -m src.seed
-```
-
-Safe to run multiple times — skips if data already exists.
-
-## Environments
-
-The app supports multiple environments via `APP_ENV`:
-
-| APP_ENV | .env file loaded | Description |
-|---------|------------------|-------------|
-| (unset) / `development` | `.env` | Local development |
-| `testing` | `.env.testing` | Test environment |
-| `staging` | `.env.staging` | Staging server |
-| `production` | `.env.production` | Production server |
-
-Set the environment:
-
-```bash
-export APP_ENV=staging
-uv run uvicorn src.main:app --port 8001
-```
-
-## Logging
-
-Logging is configured automatically on startup via `src/core/logging.py`.
-
-- **Log level**: `DEBUG` when `DEBUG=true` in `.env`, `INFO` otherwise
-- **Format**: `timestamp | LEVEL | module | message`
-- **Output**: stdout (suitable for Docker/cloud log aggregation)
-
-All service operations (login, project CRUD, file upload, job creation) and errors are logged. Logs include the environment on startup:
-
-```
-2026-04-05 10:30:00 | INFO     | src.main | Starting COA Migration API (env=development)
-2026-04-05 10:30:00 | INFO     | src.core.database | Database connected
-2026-04-05 10:30:01 | INFO     | src.modules.auth.service | User 'admin' logged in
-```
-
-## Optional Services
-
-These are not required to run the backend. The app works without them.
-
-### NATS (async job queue)
-
-Without NATS, jobs run synchronously (still works, just not async).
+### 6. Start NATS
 
 ```bash
 docker compose -f src/docker-compose.yml up -d nats
 ```
 
-Then update `.env`:
-
-```
-NATS_URL=nats://localhost:4222
-```
-
-### MinIO (S3-compatible file storage)
-
-Without MinIO, file upload/download won't work but all other features do.
+### 7. Run the server
 
 ```bash
-docker compose -f src/docker-compose.yml up -d minio minio-init
+uv run uvicorn src.main:app --reload --port 8001
 ```
 
-Then update `.env`:
+API docs available at http://localhost:8001/api/docs
 
-```
-S3_ENDPOINT=http://localhost:9000
-```
+## Shared Models & Migrations
 
-### Start all optional services at once
+All SQLAlchemy models and Alembic migrations live in the **coa-db-models** package, installed as a git dependency from its `develop` branch. Every `uv sync` in CI and Docker passes `--upgrade-package coa-db-models`, so the latest upstream commit is pulled automatically on each install — no lock bump required.
 
-```bash
-docker compose -f src/docker-compose.yml up -d
-```
+For local development, run `uv sync --dev --upgrade-package coa-db-models` when you want to pick up a new upstream change. (Plain `uv sync --dev` will use the locally-pinned SHA, which is fine for offline work.)
+
+### If you need a schema change
+
+Make it in `coa-db-models`, not here. Add the model there, generate the migration there, then push to `develop` — your next `uv sync --upgrade-package coa-db-models` (or the next CI run) will pull it in.
 
 ## Running Tests
 
 ```bash
-# Create test database first
+# Create test database (once)
 psql -U your_username -d postgres -c "CREATE DATABASE coa_migration_test"
+psql -U your_username -d coa_migration_test -c "CREATE EXTENSION IF NOT EXISTS vector"
 
 # Run all tests
-uv run pytest src/tests/ -v
+TEST_DATABASE_URL="postgresql+asyncpg://your_username@localhost:5432/coa_migration_test" uv run pytest src/tests/ -v
 
 # Run a single module
 uv run pytest src/tests/test_auth/ -v
@@ -161,27 +105,137 @@ uv run ruff check src/
 uv run ruff format src/ --check
 ```
 
+## Logging
+
+All logs go through [structlog](https://www.structlog.org/). Output format is gated on `APP_ENV`:
+
+| `APP_ENV` | Output format |
+|-----------|---------------|
+| `production` | JSON, one event per line (ready for log aggregators) |
+| anything else (default `development`) | Colored console, human-readable |
+
+Existing `logger = logging.getLogger(__name__)` call sites are bridged through the same pipeline, so every module log (auth, jobs, mappings, storage, NATS consumer, …) renders in the same format without code changes.
+
+### HTTP request audit log
+
+An audit middleware emits one structured event per request. Health checks, `OPTIONS` preflight, and docs paths are excluded.
+
+Fields:
+
+| Field | Source | Notes |
+|-------|--------|-------|
+| `ts` | ISO-8601 UTC (structlog `TimeStamper`) | |
+| `event` | `"http_request"` | |
+| `user_id` | JWT `sub` claim | `null` if no Bearer token or token invalid. No DB call |
+| `method` | `request.method` | |
+| `path` | `request.url.path` | Query string omitted to avoid logging sensitive params |
+| `status` | `response.status_code` | |
+| `duration_ms` | Integer milliseconds | |
+| `ip` | `X-Forwarded-For` first hop, else `request.client.host` | |
+| `user_agent` | `User-Agent` header | |
+
+Secrets, tokens, email addresses, and request/response bodies are never logged.
+
+### Sample JSON line (production)
+
+```json
+{"event":"http_request","ts":"2026-04-19T12:00:00Z","level":"info","logger":"audit","user_id":"…","method":"GET","path":"/api/v1/projects","status":200,"duration_ms":42,"ip":"10.0.0.1","user_agent":"curl/8.4.0"}
+```
+
+### Sample dev output
+
+```
+[info     ] http_request                 [audit] method=GET path=/api/v1/projects status=200 duration_ms=42 …
+```
+
+### Log aggregation (Loki + Grafana)
+
+Local observability stack ships with the compose file. Start it with:
+
+```bash
+docker compose -f src/docker-compose.yml up -d loki promtail grafana
+```
+
+Grafana is at http://localhost:3000 (default `admin` / `admin`). See [docs/observability-dev.md](docs/observability-dev.md) for the end-to-end local workflow, including how to run the API in production log mode so Promtail can parse the JSON. Production deployment paths (self-hosted vs Grafana Cloud free tier) are in [docs/observability-production.md](docs/observability-production.md).
+
+## Required Services
+
+### NATS (async job queue)
+
+The server will not start without a running NATS instance:
+
+```bash
+docker compose -f src/docker-compose.yml up -d nats
+```
+
+## Optional Services
+
+### MinIO (S3-compatible file storage)
+
+Without MinIO, file upload/download won't work but all other features do.
+
+```bash
+docker compose -f src/docker-compose.yml up -d minio minio-init
+```
+
 ## API Endpoints
 
-| Module | Endpoints | Auth Required |
-|--------|-----------|---------------|
-| Auth | `POST /api/v1/auth/login`, `/me`, `/logout` | No (login) |
-| Projects | `/api/v1/projects`, `/companies`, `/dashboard` | Yes |
-| Mappings | `/api/v1/mappings/fuzzy-match`, `/hierarchical`, `/project/{id}` | Yes |
-| ERP | `/api/v1/erp-systems`, `/sample-data/{id}` | No |
-| Storage | `/api/v1/storage/upload`, `/download/{id}`, `/project/{id}/files` | Yes |
-| Jobs | `/api/v1/jobs` | Yes |
-| Health | `GET /api/v1/health` | No |
+Full OpenAPI at http://localhost:8001/api/docs. Summary of what's mounted:
 
-## Production Deployment (DigitalOcean)
+| Module | Prefix | Endpoints | Auth |
+|--------|--------|-----------|------|
+| Auth | `/api/v1/auth` | `POST /register`, `GET /verify`, `POST /login` (sends magic-link email), `GET /magic-link` (consumes token), `POST /refresh`, `POST /logout`, `GET /me`, `GET /invite` | `/me`, `/logout`, `/refresh` require Bearer. Others are public. |
+| Users | `/api/v1/users` | `GET /me/orgs` | Yes |
+| Orgs | `/api/v1/orgs` | `POST /{id}/invitations`, `GET /{id}/invitations`, `DELETE /{id}/invitations/{inv_id}`, `GET /{id}/members`, `DELETE /{id}/members/{user_id}` | Yes |
+| Projects | `/api/v1` | `POST/GET /projects`, `GET/PATCH/DELETE /projects/{id}`, `POST/GET /projects/{id}/access`, `DELETE /projects/{id}/access/{user_id}`, `GET /dashboard/projects/{id}` | Yes |
+| Mappings | `/api/v1/mappings` | `POST/GET /project/{id}`, `GET /project/{id}/stats`, `POST /project/{id}/export`, `PATCH/DELETE /{mapping_id}`, `POST /bulk-update`, `PATCH /bulk-status`, `POST /hierarchical`, `POST /fuzzy-match` | Yes |
+| Account-Type Mappings | `/api/v1/mappings` | `POST/GET/DELETE /project/{id}/account-type-mappings`, `PATCH /account-type-mappings/{id}` | Yes |
+| Mapping Suggestions | `/api/v1/mappings` | `GET /project/{id}/suggestions` | Yes |
+| ERP | `/api/v1/erp-systems` | `GET ""`, `GET /{erp_id}`, `GET /{erp_id}/account-types`, `GET /sample-data/{erp_id}`, `GET /sample-data/{erp_id}/download` | No |
+| Storage | `/api/v1/storage` | `POST /upload`, `GET /files/{id}`, `DELETE /files/{id}`, `GET /download/{id}`, `GET /signed-url/{id}`, `GET /project/{id}/files` | Yes |
+| Files (alias) | `/api/v1/files` | Same surface as `/api/v1/storage/files/...` — legacy path kept for the mobile client | Yes |
+| Jobs | `/api/v1/jobs` | `POST ""`, `GET /{id}`, `GET /{id}/status`, `GET /{id}/result`, `DELETE /{id}`, `GET /project/{id}` | Yes |
+| WebSocket | `/api/v1/ws` | `/jobs/project/{id}?token=<jwt>` | Yes (JWT via query) |
+| Health | — | `GET /api/v1/health` and `GET /health` | No |
 
-```bash
-export APP_ENV=production
+## Real-time updates via WebSocket
+
+Project-scoped WebSocket for live job status.
+
+### Endpoint
+
+```
+ws://localhost:8001/api/v1/ws/jobs/project/{project_id}?token=<jwt>
 ```
 
-Update `.env.production` with real credentials, then:
+JWT is passed as a query param because browsers can't set headers on `WebSocket`. Close codes:
 
-```bash
-uv run alembic upgrade head
-uv run uvicorn src.main:app --port 8001
+| Code | Meaning |
+|------|---------|
+| 4401 | No token / invalid / expired |
+| 4403 | Valid token, no access to project |
+| 1000 | Normal close |
+| 1006 | Network drop — reconnect |
+
+### Message format (server → client)
+
+The ML worker writes terminal status to the DB and publishes just `{job_id}` on `jobs.mapping.status`. The API consumer reads the authoritative row back from the DB and broadcasts a minimal payload to every client subscribed to that project:
+
+```json
+{
+  "job_id": "uuid",
+  "status": "queued | running | completed | failed"
+}
 ```
+
+On `status == "failed"` the payload also includes an `error_message` string:
+
+```json
+{
+  "job_id": "uuid",
+  "status": "failed",
+  "error_message": "..."
+}
+```
+
+Full job metadata (files, timestamps, source/target systems) is NOT broadcast — fetch it via `GET /api/v1/jobs/{job_id}` when a status change arrives.

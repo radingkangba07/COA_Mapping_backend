@@ -2,19 +2,16 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from coa_db_models.auth.models import User
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
 
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
-from src.modules.auth.models import User
 from src.modules.projects.dependencies import get_project_service, require_project_access
 from src.modules.projects.schemas import (
     AccessGrant,
     AccessResponse,
-    CompanyCreate,
-    CompanyResponse,
-    DashboardResponse,
     ProjectCreate,
     ProjectListResponse,
     ProjectResponse,
@@ -54,7 +51,10 @@ async def list_projects(
 ):
     try:
         projects = await service.list_projects(user, skip=skip, limit=limit)
-        return ProjectListResponse(projects=projects, total=len(projects))
+        return ProjectListResponse(
+            projects=[ProjectResponse(**p) for p in projects],
+            total=len(projects),
+        )
     except AppError:
         raise
     except Exception:
@@ -69,7 +69,7 @@ async def get_project(
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        return await service.get_project(project_id)
+        return await service.get_project_with_users(project_id)
     except AppError:
         raise
     except Exception:
@@ -122,8 +122,8 @@ async def grant_access(
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        await service.grant_access(project_id, data.user_id, data.permission, user)
-        return {"success": True, "message": f"Access granted to {data.user_id}"}
+        await service.grant_access(project_id, data.email, data.permission, user)
+        return {"success": True, "message": f"Access granted to {data.email}"}
     except AppError:
         raise
     except Exception:
@@ -164,55 +164,7 @@ async def list_access(
         return JSONResponse(status_code=500, content={"detail": "Failed to list access"})
 
 
-# --- Companies ---
-
-
-@router.post("/companies", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED)
-async def create_company(
-    data: CompanyCreate,
-    user: User = Depends(get_current_user),
-    service: ProjectService = Depends(get_project_service),
-):
-    try:
-        return await service.create_company(slug=data.slug, name=data.name, description=data.description)
-    except AppError:
-        raise
-    except Exception:
-        logger.exception("Failed to create company '%s'", data.slug)
-        return JSONResponse(status_code=500, content={"detail": "Failed to create company"})
-
-
-@router.get("/companies", response_model=list[CompanyResponse])
-async def list_companies(
-    user: User = Depends(get_current_user),
-    service: ProjectService = Depends(get_project_service),
-):
-    try:
-        return await service.list_companies(user)
-    except AppError:
-        raise
-    except Exception:
-        logger.exception("Failed to list companies")
-        return JSONResponse(status_code=500, content={"detail": "Failed to list companies"})
-
-
 # --- Dashboard ---
-
-
-@router.get("/dashboard/companies", response_model=DashboardResponse)
-async def dashboard_companies(
-    user: User = Depends(get_current_user),
-    service: ProjectService = Depends(get_project_service),
-):
-    try:
-        companies = await service.get_dashboard(user)
-        total_projects = sum(len(c.projects) for c in companies)
-        return DashboardResponse(companies=companies, total_projects=total_projects)
-    except AppError:
-        raise
-    except Exception:
-        logger.exception("Failed to load dashboard")
-        return JSONResponse(status_code=500, content={"detail": "Failed to load dashboard"})
 
 
 @router.get("/dashboard/projects/{project_id}")
@@ -234,8 +186,9 @@ async def dashboard_project(
 # --- Dashboard CRUD aliases (legacy frontend uses /dashboard/projects/* for writes) ---
 
 
-@router.post("/dashboard/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED,
-             include_in_schema=False)
+@router.post(
+    "/dashboard/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False
+)
 async def dashboard_create_project(
     data: ProjectCreate,
     user: User = Depends(get_current_user),
@@ -278,11 +231,11 @@ async def dashboard_save_mappings(
 ):
     try:
         from src.modules.mappings.dependencies import get_mapping_service
-        from src.modules.mappings.schemas import MappingCreate
+        from src.modules.mappings.schemas import MappingUpsert
 
         mapping_service = get_mapping_service()
-        mapping_creates = [MappingCreate(**m) for m in mappings]
-        return await mapping_service.bulk_save(project_id, mapping_creates)
+        mapping_upserts = [MappingUpsert(**m) for m in mappings]
+        return await mapping_service.bulk_save(project_id, mapping_upserts)
     except AppError:
         raise
     except Exception:
@@ -299,8 +252,8 @@ async def dashboard_grant_access(
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        await service.grant_access(project_id, data.user_id, data.permission, user)
-        return {"success": True, "message": f"Access granted to {data.user_id}"}
+        await service.grant_access(project_id, data.email, data.permission, user)
+        return {"success": True, "message": f"Access granted to {data.email}"}
     except AppError:
         raise
     except Exception:

@@ -27,12 +27,18 @@ class Settings(BaseSettings):
     # Auth (JWT)
     jwt_secret: str = "secret"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    access_token_expire_minutes: int = 360
     refresh_token_expire_days: int = 7
 
-    # NATS JetStream (empty = disabled, sync fallback)
+    # NATS JetStream (required — connect_nats raises if unset or unreachable)
     nats_url: str = ""
     nats_stream_name: str = "COA_JOBS"
+    nats_subject_job_run: str = "jobs.mapping.run"
+    nats_subject_results: str = "jobs.mapping.status"
+    nats_stream_subjects: list[str] = ["jobs.mapping.*"]
+    nats_stream_retention: str = "workqueue"  # workqueue | limits | interest
+    nats_stream_max_age_seconds: int = 86400
+    nats_durable_consumer: str = "api-result-consumer"
 
     # S3-Compatible Storage (DigitalOcean Spaces in production, MinIO for local dev)
     s3_endpoint: str = ""
@@ -40,6 +46,12 @@ class Settings(BaseSettings):
     s3_secret_key: str = ""
     s3_bucket: str = "coa-storage"
     s3_region: str = "us-east-1"
+
+    # Email (Resend) — empty api key = disabled, logs URL instead
+    resend_api_key: str = ""
+    from_email: str = ""
+    app_url: str = ""
+    frontend_url: str = ""
 
     # App
     app_name: str = "coa-migration"

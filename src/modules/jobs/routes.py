@@ -1,12 +1,12 @@
 import logging
 from uuid import UUID
 
+from coa_db_models.auth.models import User
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
 
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
-from src.modules.auth.models import User
 from src.modules.jobs.dependencies import get_job_service
 from src.modules.jobs.schemas import JobCreate, JobResponse, JobResultResponse, JobStatusResponse
 from src.modules.jobs.service import JobService
@@ -24,7 +24,16 @@ async def create_job(
     service: JobService = Depends(get_job_service),
 ):
     try:
-        return await service.create_job(data.project_id, data.job_type, data.input_data)
+        return await service.create_job(
+            data.project_id,
+            data.job_type,
+            user.id,
+            data.input_data,
+            source_file_id=data.source_file_id,
+            target_file_id=data.target_file_id,
+            mapping_file_id=data.mapping_file_id,
+            account_type_mapping_file_id=data.account_type_mapping_file_id,
+        )
     except AppError:
         raise
     except Exception:
@@ -39,7 +48,7 @@ async def get_job(
     service: JobService = Depends(get_job_service),
 ):
     try:
-        return await service.get_job(job_id)
+        return await service.get_job(job_id, user.id)
     except AppError:
         raise
     except Exception:
@@ -54,7 +63,7 @@ async def get_job_status(
     service: JobService = Depends(get_job_service),
 ):
     try:
-        return await service.get_status(job_id)
+        return await service.get_status(job_id, user.id)
     except AppError:
         raise
     except Exception:
@@ -69,7 +78,7 @@ async def get_job_result(
     service: JobService = Depends(get_job_service),
 ):
     try:
-        return await service.get_result(job_id)
+        return await service.get_result(job_id, user.id)
     except AppError:
         raise
     except Exception:
@@ -101,7 +110,7 @@ async def cancel_job(
     service: JobService = Depends(get_job_service),
 ):
     try:
-        await service.cancel_job(job_id)
+        await service.cancel_job(job_id, user.id)
     except AppError:
         raise
     except Exception:
