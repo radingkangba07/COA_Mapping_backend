@@ -162,6 +162,23 @@ class ProjectService:
             )
         return result
 
+    async def update_access(self, project_id: UUID, user_id: UUID, permission: str, granter: User) -> ProjectAccess:
+        if user_id == granter.id:
+            raise ConflictError("Cannot change your own access on a project")
+        existing = await self.access_repo.get_user_permission(user_id, project_id)
+        if not existing:
+            raise NotFoundError(f"User {user_id} has no access on project {project_id}")
+        result = await self.access_repo.grant(
+            user_id=user_id,
+            project_id=project_id,
+            permission=permission,
+            assigned_by=granter.id,
+        )
+        if self.session:
+            await self.session.commit()
+        logger.info("Updated access to '%s' for user %s on project %s", permission, user_id, project_id)
+        return result
+
     async def revoke_access(self, project_id: UUID, user_id: UUID) -> None:
         await self.access_repo.revoke(user_id=user_id, project_id=project_id)
         if self.session:
