@@ -292,7 +292,7 @@ wheels = [
 [[package]]
 name = "coa-db-models"
 version = "0.1.0"
-source = { git = "https://github.com/bhavna-linkedrp/coa-db-models.?branch=develop#5fc79332e4d7c7f0e5dc31f3cc75d0cf931ae09a" }
+source = { git = "https://github.com/bhavna-linkedrp/coa-db-models.?branch=develop#ceca392df4ae0424055dbc0b9c6a927bee958013" }
 dependencies = [
     { name = "pgvector" },
     { name = "sqlalchemy", extra = ["asyncio"] },

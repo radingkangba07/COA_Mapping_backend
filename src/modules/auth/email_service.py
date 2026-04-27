@@ -72,3 +72,15 @@ class EmailService:
             app_name="COA Migration Platform",
         )
         await self._send_email(to, f"You've been invited to {org_name}", html)
+
+    async def send_project_access_email(self, to: str, granter_name: str, project_name: str, permission: str) -> None:
+        # Reuses the invitation template with project context — recipient is an
+        # existing user, so the link just opens the app (no accept token).
+        project_url = self.settings.app_url
+        html = _template_env.get_template("invitation.html").render(
+            inviter_name=granter_name,
+            org_name=f"the project '{project_name}' as {permission}",
+            invite_url=project_url,
+            app_name="COA Migration Platform",
+        )
+        await self._send_email(to, f"You've been added to {project_name}", html)

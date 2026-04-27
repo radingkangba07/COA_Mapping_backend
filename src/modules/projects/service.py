@@ -7,7 +7,7 @@ from coa_db_models.mappings.models import CoaMapping
 from coa_db_models.projects.models import Project, ProjectAccess
 from sqlalchemy import select
 
-from src.core.exceptions import ForbiddenError, NotFoundError
+from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.modules.projects.protocols import (
     ProjectAccessRepositoryProtocol,
     ProjectRepositoryProtocol,
@@ -32,10 +32,12 @@ class ProjectService:
         project_repo: ProjectRepositoryProtocol,
         access_repo: ProjectAccessRepositoryProtocol,
         session=None,
+        email_service=None,
     ):
         self.project_repo = project_repo
         self.access_repo = access_repo
         self.session = session
+        self.email_service = email_service
 
     async def create_project(self, data: ProjectCreate, user: User) -> Project:
         project = await self.project_repo.create_project(
@@ -122,14 +124,23 @@ class ProjectService:
             await self.session.commit()
         logger.info("Project %s deleted", project_id)
 
-    async def grant_access(self, project_id: UUID, email: str, permission: str, granter: User) -> ProjectAccess:
-        await self.get_project(project_id)
+    async def grant_access(
+        self,
+        project_id: UUID,
+        email: str,
+        permission: str,
+        granter: User,
+        background_tasks=None,
+    ) -> ProjectAccess:
+        project = await self.get_project(project_id)
         from src.modules.auth.repository import UserRepository
 
         user_repo = UserRepository(self.session)
         target_user = await user_repo.get_by_email(email)
         if not target_user:
             raise NotFoundError(f"User with email '{email}' not found")
+        if target_user.id == granter.id:
+            raise ConflictError("Cannot grant project access to yourself")
         result = await self.access_repo.grant(
             user_id=target_user.id,
             project_id=project_id,
@@ -139,6 +150,16 @@ class ProjectService:
         if self.session:
             await self.session.commit()
         logger.info("Granted '%s' access to user %s on project %s", permission, target_user.id, project_id)
+
+        if self.email_service and background_tasks:
+            granter_name = getattr(granter, "name", None) or granter.email
+            background_tasks.add_task(
+                self.email_service.send_project_access_email,
+                to=email,
+                granter_name=granter_name,
+                project_name=project.name,
+                permission=permission,
+            )
         return result
 
     async def revoke_access(self, project_id: UUID, user_id: UUID) -> None:
