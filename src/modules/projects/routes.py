@@ -12,6 +12,7 @@ from src.modules.projects.dependencies import get_project_service, require_proje
 from src.modules.projects.schemas import (
     AccessGrant,
     AccessResponse,
+    AccessUpdate,
     ProjectCreate,
     ProjectListResponse,
     ProjectResponse,
@@ -130,6 +131,25 @@ async def grant_access(
     except Exception:
         logger.exception("Failed to grant access on project %s", project_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to grant access"})
+
+
+@router.patch("/projects/{project_id}/access/{user_id}")
+async def update_access(
+    project_id: UUID,
+    user_id: UUID,
+    data: AccessUpdate,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("approver")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        await service.update_access(project_id, user_id, data.permission, user)
+        return {"success": True, "message": f"Access updated to {data.permission}"}
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to update access on project %s", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to update access"})
 
 
 @router.delete("/projects/{project_id}/access/{user_id}")

@@ -59,6 +59,10 @@ class AccessGrant(BaseModel):
     permission: str = "viewer"
 
 
+class AccessUpdate(BaseModel):
+    permission: str
+
+
 class AccessResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID

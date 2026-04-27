@@ -56,7 +56,7 @@ class AuthService:
             raise ConflictError("Organization name already taken")
 
         user = await self.user_repo.create_user(
-            user_id=email.split("@")[0],
+            user_id=email,
             email=email,
             name=name,
         )

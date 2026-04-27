@@ -36,6 +36,20 @@ async def test_register_duplicate_email(test_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_register_same_local_part_different_domain(test_client: AsyncClient):
+    resp1 = await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": "Anil A", "email": "anil@first.example", "org_name": "First Org"},
+    )
+    assert resp1.status_code == 201
+    resp2 = await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": "Anil B", "email": "anil@second.example", "org_name": "Second Org"},
+    )
+    assert resp2.status_code == 201
+
+
+@pytest.mark.asyncio
 async def test_register_duplicate_org(test_client: AsyncClient):
     await test_client.post(
         "/api/v1/auth/register",
