@@ -3,7 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from coa_db_models.auth.models import User
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from fastapi.responses import JSONResponse
 
 from src.core.exceptions import AppError
@@ -117,12 +117,13 @@ async def delete_project(
 async def grant_access(
     project_id: UUID,
     data: AccessGrant,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     _access=Depends(require_project_access("approver")),
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        await service.grant_access(project_id, data.email, data.permission, user)
+        await service.grant_access(project_id, data.email, data.permission, user, background_tasks)
         return {"success": True, "message": f"Access granted to {data.email}"}
     except AppError:
         raise

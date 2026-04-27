@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import get_db
 from src.core.exceptions import ForbiddenError, NotFoundError
 from src.modules.auth.dependencies import get_current_user
+from src.modules.auth.email_service import EmailService
 from src.modules.projects.repository import ProjectAccessRepository, ProjectRepository
 from src.modules.projects.service import ProjectService, permission_level
 
@@ -23,6 +24,7 @@ def get_project_service(db: AsyncSession = Depends(get_db)) -> ProjectService:
         project_repo=ProjectRepository(db),
         access_repo=ProjectAccessRepository(db),
         session=db,
+        email_service=EmailService(),
     )
 
 
