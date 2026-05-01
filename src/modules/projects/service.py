@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.modules.projects.protocols import (
+    OrgMembershipReaderProtocol,
     ProjectAccessRepositoryProtocol,
     ProjectRepositoryProtocol,
 )
@@ -22,7 +23,9 @@ logger = logging.getLogger(__name__)
 PERMISSION_LEVELS = {"viewer": 1, "editor": 2, "approver": 3, "admin": 4}
 
 
-def permission_level(perm: str) -> int:
+def permission_level(perm: str | None) -> int:
+    if perm is None:
+        return 0
     return PERMISSION_LEVELS.get(perm, 0)
 
 
@@ -33,11 +36,13 @@ class ProjectService:
         access_repo: ProjectAccessRepositoryProtocol,
         session=None,
         email_service=None,
+        org_repo: OrgMembershipReaderProtocol | None = None,
     ):
         self.project_repo = project_repo
         self.access_repo = access_repo
         self.session = session
         self.email_service = email_service
+        self.org_repo = org_repo
 
     async def create_project(self, data: ProjectCreate, user: User) -> Project:
         project = await self.project_repo.create_project(
@@ -66,13 +71,28 @@ class ProjectService:
             raise NotFoundError("Project not found")
         return project
 
-    async def list_projects(self, user: User, skip: int = 0, limit: int = 50) -> list[dict]:
+    async def list_projects(
+        self,
+        user: User,
+        skip: int = 0,
+        limit: int = 50,
+        org_id: UUID | None = None,
+    ) -> list[dict]:
         access_list = await self.access_repo.list_for_user(user.id)
-        project_ids = [a.project_id for a in access_list]
-        if not project_ids:
+        if not access_list:
             return []
-        rows = await self.project_repo.list_by_ids_with_users(project_ids)
-        return [self._project_row_to_dict(row) for row in rows]
+        perms: dict[UUID, str] = {a.project_id: a.permission for a in access_list}
+        rows = await self.project_repo.list_by_ids_with_users(list(perms.keys()))
+
+        results: list[dict] = []
+        for row in rows:
+            project: Project = row[0]
+            if org_id is not None and project.org_id != org_id:
+                continue
+            results.append(self._project_row_to_dict(row, perms.get(project.id)))
+
+        results.sort(key=lambda p: p["updated_at"], reverse=True)
+        return results[skip : skip + limit]
 
     async def get_project_with_users(self, project_id: UUID) -> dict:
         row = await self.project_repo.get_by_id_with_users(project_id)
@@ -81,7 +101,7 @@ class ProjectService:
         return self._project_row_to_dict(row)
 
     @staticmethod
-    def _project_row_to_dict(row: Any) -> dict:
+    def _project_row_to_dict(row: Any, effective_permission: str | None = None) -> dict:
         project: Project = row[0]
         return {
             "id": project.id,
@@ -98,6 +118,7 @@ class ProjectService:
             "updated_by_name": row.updated_by_name,
             "created_at": project.created_at,
             "updated_at": project.updated_at,
+            "effective_permission": effective_permission,
         }
 
     async def update_project(self, project_id: UUID, data: ProjectUpdate, user: User | None = None) -> Project:
@@ -141,6 +162,13 @@ class ProjectService:
             raise NotFoundError(f"User with email '{email}' not found")
         if target_user.id == granter.id:
             raise ConflictError("Cannot grant project access to yourself")
+        if self.org_repo is not None:
+            member = await self.org_repo.get_member(project.org_id, target_user.id)
+            if member is None:
+                raise ForbiddenError(
+                    f"User '{email}' is not a member of this project's organization. "
+                    "Invite them to the organization first."
+                )
         result = await self.access_repo.grant(
             user_id=target_user.id,
             project_id=project_id,

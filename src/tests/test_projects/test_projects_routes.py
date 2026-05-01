@@ -114,6 +114,21 @@ async def _create_verified_user(test_client: AsyncClient, email: str, org_name: 
     return ""
 
 
+async def _add_to_org(user_id: str, org_id: str, role: str = "member") -> None:
+    """Add a user to an organization as a member."""
+    from uuid import UUID
+
+    from src.core.database import get_db as _get_db
+    from src.main import app
+    from src.modules.auth.repository import OrganizationRepository
+
+    db_override = app.dependency_overrides.get(_get_db)
+    async for session in db_override():
+        await OrganizationRepository(session).create_member(user_id=UUID(user_id), org_id=UUID(org_id), role=role)
+        await session.commit()
+        return
+
+
 @pytest.mark.asyncio
 async def test_grant_access_to_self_returns_409(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     create_resp = await authenticated_client.post(
@@ -148,6 +163,7 @@ async def test_grant_access_happy_path(
 ):
     other_email = "grantee@example.com"
     other_user_id = await _create_verified_user(test_client, other_email)
+    await _add_to_org(other_user_id, seed_user["org_id"])
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Grant Happy Project", "org_id": seed_user["org_id"]},
@@ -164,11 +180,53 @@ async def test_grant_access_happy_path(
 
 
 @pytest.mark.asyncio
+async def test_grant_access_email_case_insensitive(
+    authenticated_client: AsyncClient, test_client: AsyncClient, seed_user: dict[str, Any]
+):
+    """Email lookup must match regardless of case — registering Bhavna@example then
+    granting bhavna@example (or vice versa) should both succeed."""
+    other_email = "MixedCase@example.com"
+    other_user_id = await _create_verified_user(test_client, other_email)
+    await _add_to_org(other_user_id, seed_user["org_id"])
+    create_resp = await authenticated_client.post(
+        "/api/v1/projects",
+        json={"name": "Case Project", "org_id": seed_user["org_id"]},
+    )
+    project_id = create_resp.json()["id"]
+
+    resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/access",
+        json={"email": "mixedcase@example.com", "permission": "viewer"},
+    )
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_grant_access_non_org_member_returns_403(
+    authenticated_client: AsyncClient, test_client: AsyncClient, seed_user: dict[str, Any]
+):
+    other_email = "outsider@example.com"
+    await _create_verified_user(test_client, other_email)
+    create_resp = await authenticated_client.post(
+        "/api/v1/projects",
+        json={"name": "Outsider Project", "org_id": seed_user["org_id"]},
+    )
+    project_id = create_resp.json()["id"]
+
+    resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/access",
+        json={"email": other_email, "permission": "editor"},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_update_access_happy_path(
     authenticated_client: AsyncClient, test_client: AsyncClient, seed_user: dict[str, Any]
 ):
     other_email = "updatee@example.com"
     other_user_id = await _create_verified_user(test_client, other_email)
+    await _add_to_org(other_user_id, seed_user["org_id"])
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Update Access Project", "org_id": seed_user["org_id"]},

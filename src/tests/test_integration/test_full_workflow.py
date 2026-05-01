@@ -187,6 +187,7 @@ async def test_full_workflow(db_session):
 
         viewer = await user_repo.get_by_email("viewer@example.com")
         await user_repo.verify_user(viewer.id)
+        await org_repo.create_member(user_id=viewer.id, org_id=org.id, role="member")
         await db_session.commit()
         viewer_uuid = str(viewer.id)
 

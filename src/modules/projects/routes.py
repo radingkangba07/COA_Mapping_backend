@@ -47,11 +47,12 @@ async def create_project(
 async def list_projects(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
+    org_id: UUID | None = Query(None),
     user: User = Depends(get_current_user),
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        projects = await service.list_projects(user, skip=skip, limit=limit)
+        projects = await service.list_projects(user, skip=skip, limit=limit, org_id=org_id)
         return ProjectListResponse(
             projects=[ProjectResponse(**p) for p in projects],
             total=len(projects),

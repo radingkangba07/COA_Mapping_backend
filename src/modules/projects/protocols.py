@@ -1,6 +1,7 @@
 from typing import Any, Protocol
 from uuid import UUID
 
+from coa_db_models.auth.models import OrganizationMember
 from coa_db_models.projects.models import Project, ProjectAccess
 
 
@@ -22,3 +23,9 @@ class ProjectAccessRepositoryProtocol(Protocol):
     async def list_for_user(self, user_id: UUID) -> list[ProjectAccess]: ...
     async def grant(self, user_id: UUID, project_id: UUID, permission: str, assigned_by: UUID) -> ProjectAccess: ...
     async def revoke(self, user_id: UUID, project_id: UUID) -> None: ...
+
+
+class OrgMembershipReaderProtocol(Protocol):
+    """Slice of OrganizationRepository used for project access checks."""
+
+    async def get_member(self, org_id: UUID, user_id: UUID) -> OrganizationMember | None: ...

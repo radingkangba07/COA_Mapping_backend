@@ -16,7 +16,7 @@ class UserRepository(BaseRepository[User]):
         return result.scalar_one_or_none()
 
     async def get_by_email(self, email: str) -> User | None:
-        result = await self.session.execute(select(User).where(User.email == email))
+        result = await self.session.execute(select(User).where(func.lower(User.email) == email.lower()))
         return result.scalar_one_or_none()
 
     async def create_user(self, user_id: str, name: str, email: str) -> User:
@@ -190,7 +190,7 @@ class OrganizationRepository:
         result = await self.session.execute(
             select(OrganizationInvitation).where(
                 OrganizationInvitation.org_id == org_id,
-                OrganizationInvitation.email == email,
+                func.lower(OrganizationInvitation.email) == email.lower(),
                 OrganizationInvitation.status == "pending",
             )
         )
@@ -265,7 +265,7 @@ class InvitationRepository:
     async def get_pending_by_email_and_org(self, email: str, org_id: UUID) -> OrganizationInvitation | None:
         result = await self.session.execute(
             select(OrganizationInvitation).where(
-                OrganizationInvitation.email == email,
+                func.lower(OrganizationInvitation.email) == email.lower(),
                 OrganizationInvitation.org_id == org_id,
                 OrganizationInvitation.status == "pending",
                 OrganizationInvitation.expires_at > datetime.now(UTC),
