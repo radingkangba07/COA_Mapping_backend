@@ -7,10 +7,18 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.core.config import get_settings
 from src.core.exceptions import AppError
-from src.modules.auth.dependencies import get_auth_service, get_current_user, get_invitation_service
+from src.modules.auth.dependencies import (
+    get_auth_service,
+    get_client_org_service,
+    get_current_user,
+    get_invitation_service,
+)
 from src.modules.auth.email_service import _template_env
 from src.modules.auth.invitation_service import InvitationService
 from src.modules.auth.schemas import (
+    ClientOrgCreate,
+    ClientOrgResponse,
+    ClientOrgUpdate,
     InvitationCreate,
     InvitationMessageResponse,
     InvitationResponse,
@@ -25,7 +33,7 @@ from src.modules.auth.schemas import (
     RegisterResponse,
     TokenResponse,
 )
-from src.modules.auth.service import AuthService
+from src.modules.auth.service import AuthService, ClientOrgService
 
 logger = logging.getLogger(__name__)
 
@@ -288,3 +296,72 @@ async def get_my_orgs(
     except Exception:
         logger.exception("Failed to get user orgs")
         return JSONResponse(status_code=500, content={"detail": "Failed to get user orgs"})
+
+
+# --- Client Orgs ---
+
+
+@orgs_router.post("/{org_id}/clients", response_model=ClientOrgResponse, status_code=201)
+async def create_client_org(
+    org_id: UUID,
+    data: ClientOrgCreate,
+    user: User = Depends(get_current_user),
+    service: ClientOrgService = Depends(get_client_org_service),
+):
+    try:
+        return await service.create_client(org_id, data, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to create client org under employer %s", org_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to create client organization"})
+
+
+@orgs_router.get("/{org_id}/clients", response_model=list[ClientOrgResponse])
+async def list_client_orgs(
+    org_id: UUID,
+    user: User = Depends(get_current_user),
+    service: ClientOrgService = Depends(get_client_org_service),
+):
+    try:
+        return await service.list_clients(org_id, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to list client orgs for employer %s", org_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to list client organizations"})
+
+
+@orgs_router.get("/{org_id}/clients/{client_id}", response_model=ClientOrgResponse)
+async def get_client_org(
+    org_id: UUID,
+    client_id: UUID,
+    user: User = Depends(get_current_user),
+    service: ClientOrgService = Depends(get_client_org_service),
+):
+    try:
+        return await service.get_client(org_id, client_id, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to get client org %s", client_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to get client organization"})
+
+
+@orgs_router.patch("/{org_id}/clients/{client_id}", response_model=ClientOrgResponse)
+async def update_client_org(
+    org_id: UUID,
+    client_id: UUID,
+    data: ClientOrgUpdate,
+    user: User = Depends(get_current_user),
+    service: ClientOrgService = Depends(get_client_org_service),
+):
+    try:
+        return await service.update_client(org_id, client_id, data, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to update client org %s", client_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to update client organization"})
+
+

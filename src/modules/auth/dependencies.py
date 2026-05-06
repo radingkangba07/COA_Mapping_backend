@@ -12,7 +12,7 @@ from src.modules.auth.repository import (
     RefreshTokenRepository,
     UserRepository,
 )
-from src.modules.auth.service import AuthService
+from src.modules.auth.service import AuthService, ClientOrgService
 
 
 def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
@@ -32,6 +32,13 @@ def get_invitation_service(db: AsyncSession = Depends(get_db)) -> InvitationServ
         user_repo=UserRepository(db),
         session=db,
         email_service=EmailService(),
+    )
+
+
+def get_client_org_service(db: AsyncSession = Depends(get_db)) -> ClientOrgService:
+    return ClientOrgService(
+        org_repo=OrganizationRepository(db),
+        session=db,
     )
 
 
