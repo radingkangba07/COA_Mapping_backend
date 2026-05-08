@@ -1,6 +1,7 @@
 import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from coa_db_models.auth.models import User
 from fastapi import BackgroundTasks
@@ -61,7 +62,7 @@ class AuthService:
             name=name,
         )
 
-        org = await self.org_repo.create(name=org_name)
+        org = await self.org_repo.create(name=org_name, org_type="employer")
         await self.org_repo.create_member(user_id=user.id, org_id=org.id, role="owner")
 
         # Generate verification token (JWT, 15min expiry)
@@ -264,7 +265,10 @@ class AuthService:
     async def get_user_orgs(self, user: User) -> list[dict]:
         """Return the user's organization memberships."""
         memberships = await self.org_repo.get_memberships_for_user(user.id)
-        return [{"id": member.org_id, "name": org_name, "role": member.role} for member, org_name in memberships]
+        return [
+            {"id": member.org_id, "name": org_name, "role": member.role, "org_type": org_type}
+            for member, org_name, org_type in memberships
+        ]
 
     async def get_me(self, user: User) -> dict:
         """Return user profile with org memberships."""
@@ -277,3 +281,76 @@ class AuthService:
             "is_verified": user.is_verified,
             "orgs": orgs,
         }
+
+
+class ClientOrgService:
+    def __init__(self, org_repo: OrganizationRepositoryProtocol, session=None):
+        self.org_repo = org_repo
+        self.session = session
+
+    async def _require_employer_admin(self, user_id: UUID, employer_org_id: UUID) -> None:
+        member = await self.org_repo.get_member(employer_org_id, user_id)
+        if not member or member.role not in ("owner", "admin"):
+            raise ForbiddenError("Only employer org admins can perform this action")
+
+    async def create_client(self, employer_org_id: UUID, data, current_user: User):
+        employer = await self.org_repo.get_by_id(employer_org_id)
+        if not employer:
+            raise NotFoundError("Organization not found")
+        if employer.org_type != "employer":
+            raise ForbiddenError("Cannot create a client under a client organization")
+        await self._require_employer_admin(current_user.id, employer_org_id)
+
+        client = await self.org_repo.create_client(
+            name=data.name,
+            parent_org_id=employer_org_id,
+            description=data.description,
+            slug=None,
+        )
+        await self.org_repo.create_member(user_id=current_user.id, org_id=client.id, role="owner")
+
+        if self.session:
+            await self.session.commit()
+        logger.info("Client org '%s' created under %s by user %s", client.name, employer_org_id, current_user.id)
+        return client
+
+    async def list_clients(self, employer_org_id: UUID, current_user: User):
+        employer = await self.org_repo.get_by_id(employer_org_id)
+        if not employer:
+            raise NotFoundError("Organization not found")
+        member = await self.org_repo.get_member(employer_org_id, current_user.id)
+        if not member:
+            raise ForbiddenError("You are not a member of this organization")
+        return await self.org_repo.list_clients(employer_org_id)
+
+    async def get_client(self, employer_org_id: UUID, client_id: UUID, current_user: User):
+        employer_member = await self.org_repo.get_member(employer_org_id, current_user.id)
+        client_member = await self.org_repo.get_member(client_id, current_user.id)
+        if not employer_member and not client_member:
+            raise ForbiddenError("Access denied")
+        client = await self.org_repo.get_client(client_id, employer_org_id)
+        if not client:
+            raise NotFoundError("Client organization not found")
+        return client
+
+    async def update_client(self, employer_org_id: UUID, client_id: UUID, data, current_user: User):
+        client = await self.org_repo.get_client(client_id, employer_org_id)
+        if not client:
+            raise NotFoundError("Client organization not found")
+
+        employer_member = await self.org_repo.get_member(employer_org_id, current_user.id)
+        client_member = await self.org_repo.get_member(client_id, current_user.id)
+        is_employer_admin = employer_member and employer_member.role in ("owner", "admin")
+        is_client_admin = client_member and client_member.role in ("owner", "admin")
+        if not is_employer_admin and not is_client_admin:
+            raise ForbiddenError("Insufficient permissions to update this client organization")
+
+        updated = await self.org_repo.update_org(
+            org_id=client_id,
+            name=data.name,
+            description=data.description,
+        )
+        if self.session:
+            await self.session.commit()
+        logger.info("Client org %s updated by user %s", client_id, current_user.id)
+        return updated

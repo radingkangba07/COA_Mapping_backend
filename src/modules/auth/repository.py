@@ -111,14 +111,64 @@ class OrganizationRepository:
         org: Organization | None = result.scalar_one_or_none()
         return org
 
-    async def create(self, name: str, slug: str | None = None) -> Organization:
+    async def create(self, name: str, slug: str | None = None, org_type: str = "employer") -> Organization:
         import re
 
         if not slug:
             slug = re.sub(r"[^a-zA-Z0-9]+", "-", name).strip("-").lower()
-        org = Organization(name=name, slug=slug)
+        org = Organization(name=name, slug=slug, org_type=org_type)
         self.session.add(org)
         await self.session.flush()
+        return org
+
+    async def create_client(
+        self, name: str, parent_org_id: UUID, description: str | None = None, slug: str | None = None
+    ) -> Organization:
+        import re
+
+        if not slug:
+            slug = re.sub(r"[^a-zA-Z0-9]+", "-", name).strip("-").lower()
+        org = Organization(
+            name=name, slug=slug, org_type="client", parent_org_id=parent_org_id, description=description
+        )
+        self.session.add(org)
+        await self.session.flush()
+        await self.session.refresh(org)
+        return org
+
+    async def list_clients(self, parent_org_id: UUID) -> list[Organization]:
+        result = await self.session.execute(
+            select(Organization)
+            .where(Organization.parent_org_id == parent_org_id, Organization.org_type == "client")
+            .order_by(Organization.name)
+        )
+        return list(result.scalars().all())
+
+    async def get_client(self, client_id: UUID, parent_org_id: UUID) -> Organization | None:
+        result = await self.session.execute(
+            select(Organization).where(
+                Organization.id == client_id,
+                Organization.parent_org_id == parent_org_id,
+                Organization.org_type == "client",
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def update_org(
+        self, org_id: UUID, name: str | None = None, description: str | None = None
+    ) -> Organization | None:
+        import re
+
+        org = await self.session.get(Organization, org_id)
+        if not org:
+            return None
+        if name is not None:
+            org.name = name
+            org.slug = re.sub(r"[^a-zA-Z0-9]+", "-", name).strip("-").lower()
+        if description is not None:
+            org.description = description
+        await self.session.flush()
+        await self.session.refresh(org)
         return org
 
     async def create_member(self, user_id: UUID, org_id: UUID, role: str) -> OrganizationMember:
@@ -171,7 +221,11 @@ class OrganizationRepository:
 
     async def get_memberships_for_user(self, user_id: UUID) -> list:
         result = await self.session.execute(
-            select(OrganizationMember, Organization.name.label("org_name"))
+            select(
+                OrganizationMember,
+                Organization.name.label("org_name"),
+                Organization.org_type.label("org_type"),
+            )
             .join(Organization, OrganizationMember.org_id == Organization.id)
             .where(OrganizationMember.user_id == user_id)
         )

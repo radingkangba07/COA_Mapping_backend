@@ -35,6 +35,22 @@ class InvitationService:
         self.email_service = email_service
 
     async def _require_owner(self, user_id: UUID, org_id: UUID) -> None:
+        org = await self.org_repo.get_by_id(org_id)
+        if not org:
+            raise NotFoundError("Organization not found")
+
+        if org.org_type == "client" and org.parent_org_id:
+            # Employer org owner/admin has full authority over their client orgs
+            employer_member = await self.org_repo.get_member(org.parent_org_id, user_id)
+            if employer_member and employer_member.role in ("owner", "admin"):
+                return
+            # Client org owner also qualifies
+            client_member = await self.org_repo.get_member(org_id, user_id)
+            if client_member and client_member.role == "owner":
+                return
+            raise ForbiddenError("Only organization owners can perform this action")
+
+        # Employer org — original check
         member = await self.org_repo.get_member(org_id, user_id)
         if not member or member.role != "owner":
             raise ForbiddenError("Only organization owners can perform this action")
@@ -193,4 +209,7 @@ class InvitationService:
 
     async def list_user_orgs(self, current_user: User) -> list[dict]:
         memberships = await self.org_repo.get_memberships_for_user(current_user.id)
-        return [{"id": member.org_id, "name": org_name, "role": member.role} for member, org_name in memberships]
+        return [
+            {"id": member.org_id, "name": org_name, "role": member.role, "org_type": org_type}
+            for member, org_name, org_type in memberships
+        ]

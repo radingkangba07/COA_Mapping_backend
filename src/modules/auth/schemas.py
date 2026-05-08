@@ -43,6 +43,7 @@ class OrgMembership(BaseModel):
     id: uuid.UUID
     name: str
     role: str
+    org_type: str
 
 
 class MeResponse(BaseModel):
@@ -107,3 +108,29 @@ class OrgInvitationResponse(BaseModel):
     role: str
     status: str
     invited_at: str
+
+
+# --- Client org schemas ---
+
+
+class ClientOrgCreate(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class ClientOrgUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class ClientOrgResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    description: str | None
+    org_type: str
+    parent_org_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
