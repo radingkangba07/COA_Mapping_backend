@@ -171,7 +171,6 @@ class OrganizationRepository:
         await self.session.refresh(org)
         return org
 
-
     async def create_member(self, user_id: UUID, org_id: UUID, role: str) -> OrganizationMember:
         member = OrganizationMember(user_id=user_id, org_id=org_id, role=role)
         self.session.add(member)

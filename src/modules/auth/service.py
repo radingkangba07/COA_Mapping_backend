@@ -354,4 +354,3 @@ class ClientOrgService:
             await self.session.commit()
         logger.info("Client org %s updated by user %s", client_id, current_user.id)
         return updated
-

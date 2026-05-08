@@ -363,5 +363,3 @@ async def update_client_org(
     except Exception:
         logger.exception("Failed to update client org %s", client_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to update client organization"})
-
-
