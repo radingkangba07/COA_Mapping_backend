@@ -4,7 +4,9 @@ from pydantic import BaseModel
 class SuggestionAccountResponse(BaseModel):
     id: str | None = None
     suggestion_id: str
+    source_account_number: str | None = None
     source_name: str
+    target_account_number: str | None = None
     target_name: str
     score: float
     status: str
