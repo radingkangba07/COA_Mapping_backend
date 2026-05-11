@@ -7,7 +7,9 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_create_project_auto_admin(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_create_project_auto_admin(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json={
@@ -22,7 +24,9 @@ async def test_create_project_auto_admin(authenticated_client: AsyncClient, seed
     project_id = data["id"]
 
     # Verify auto-admin access was granted
-    access_resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/access")
+    access_resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/access"
+    )
     assert access_resp.status_code == 200
     access_list = access_resp.json()
     assert len(access_list) >= 1
@@ -30,7 +34,9 @@ async def test_create_project_auto_admin(authenticated_client: AsyncClient, seed
 
 
 @pytest.mark.asyncio
-async def test_create_project_default_erp(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_create_project_default_erp(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "No ERP Project", "org_id": seed_user["org_id"]},
@@ -42,7 +48,9 @@ async def test_create_project_default_erp(authenticated_client: AsyncClient, see
 
 
 @pytest.mark.asyncio
-async def test_list_projects(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_list_projects(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
     await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "List Project", "org_id": seed_user["org_id"]},
@@ -56,7 +64,9 @@ async def test_list_projects(authenticated_client: AsyncClient, seed_user: dict[
 
 
 @pytest.mark.asyncio
-async def test_get_project(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_get_project(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Get Project", "org_id": seed_user["org_id"]},
@@ -68,7 +78,9 @@ async def test_get_project(authenticated_client: AsyncClient, seed_user: dict[st
 
 
 @pytest.mark.asyncio
-async def test_update_project(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_update_project(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Update Project", "org_id": seed_user["org_id"]},
@@ -83,7 +95,9 @@ async def test_update_project(authenticated_client: AsyncClient, seed_user: dict
 
 
 @pytest.mark.asyncio
-async def test_delete_project(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_delete_project(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Delete Project", "org_id": seed_user["org_id"]},
@@ -97,13 +111,18 @@ async def test_delete_project(authenticated_client: AsyncClient, seed_user: dict
 # --- Access control: grant/update/revoke ---
 
 
-async def _create_verified_user(test_client: AsyncClient, email: str, org_name: str = "Other Org") -> str:
+async def _create_verified_user(
+    test_client: AsyncClient, email: str, org_name: str = "Other Org"
+) -> str:
     """Register + verify a second user; return user_id."""
     from src.core.database import get_db as _get_db
     from src.main import app
     from src.modules.auth.repository import UserRepository
 
-    await test_client.post("/api/v1/auth/register", json={"name": email, "email": email, "org_name": org_name})
+    await test_client.post(
+        "/api/v1/auth/register",
+        json={"name": email, "email": email, "org_name": org_name},
+    )
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
         repo = UserRepository(session)
@@ -124,13 +143,17 @@ async def _add_to_org(user_id: str, org_id: str, role: str = "member") -> None:
 
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
-        await OrganizationRepository(session).create_member(user_id=UUID(user_id), org_id=UUID(org_id), role=role)
+        await OrganizationRepository(session).create_member(
+            user_id=UUID(user_id), org_id=UUID(org_id), role=role
+        )
         await session.commit()
         return
 
 
 @pytest.mark.asyncio
-async def test_grant_access_to_self_returns_409(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_grant_access_to_self_returns_409(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Self Grant Project", "org_id": seed_user["org_id"]},
@@ -144,7 +167,9 @@ async def test_grant_access_to_self_returns_409(authenticated_client: AsyncClien
 
 
 @pytest.mark.asyncio
-async def test_grant_access_unknown_email_returns_404(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_grant_access_unknown_email_returns_404(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Unknown Email Project", "org_id": seed_user["org_id"]},
@@ -159,7 +184,9 @@ async def test_grant_access_unknown_email_returns_404(authenticated_client: Asyn
 
 @pytest.mark.asyncio
 async def test_grant_access_happy_path(
-    authenticated_client: AsyncClient, test_client: AsyncClient, seed_user: dict[str, Any]
+    authenticated_client: AsyncClient,
+    test_client: AsyncClient,
+    seed_user: dict[str, Any],
 ):
     other_email = "grantee@example.com"
     other_user_id = await _create_verified_user(test_client, other_email)
@@ -176,12 +203,17 @@ async def test_grant_access_happy_path(
     )
     assert resp.status_code == 200
     list_resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/access")
-    assert any(a["user_id"] == other_user_id and a["permission"] == "editor" for a in list_resp.json())
+    assert any(
+        a["user_id"] == other_user_id and a["permission"] == "editor"
+        for a in list_resp.json()
+    )
 
 
 @pytest.mark.asyncio
 async def test_grant_access_email_case_insensitive(
-    authenticated_client: AsyncClient, test_client: AsyncClient, seed_user: dict[str, Any]
+    authenticated_client: AsyncClient,
+    test_client: AsyncClient,
+    seed_user: dict[str, Any],
 ):
     """Email lookup must match regardless of case — registering Bhavna@example then
     granting bhavna@example (or vice versa) should both succeed."""
@@ -203,7 +235,9 @@ async def test_grant_access_email_case_insensitive(
 
 @pytest.mark.asyncio
 async def test_grant_access_non_org_member_returns_403(
-    authenticated_client: AsyncClient, test_client: AsyncClient, seed_user: dict[str, Any]
+    authenticated_client: AsyncClient,
+    test_client: AsyncClient,
+    seed_user: dict[str, Any],
 ):
     other_email = "outsider@example.com"
     await _create_verified_user(test_client, other_email)
@@ -222,7 +256,9 @@ async def test_grant_access_non_org_member_returns_403(
 
 @pytest.mark.asyncio
 async def test_update_access_happy_path(
-    authenticated_client: AsyncClient, test_client: AsyncClient, seed_user: dict[str, Any]
+    authenticated_client: AsyncClient,
+    test_client: AsyncClient,
+    seed_user: dict[str, Any],
 ):
     other_email = "updatee@example.com"
     other_user_id = await _create_verified_user(test_client, other_email)
@@ -243,12 +279,17 @@ async def test_update_access_happy_path(
     )
     assert resp.status_code == 200
     list_resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/access")
-    assert any(a["user_id"] == other_user_id and a["permission"] == "approver" for a in list_resp.json())
+    assert any(
+        a["user_id"] == other_user_id and a["permission"] == "approver"
+        for a in list_resp.json()
+    )
 
 
 @pytest.mark.asyncio
 async def test_update_access_no_existing_returns_404(
-    authenticated_client: AsyncClient, test_client: AsyncClient, seed_user: dict[str, Any]
+    authenticated_client: AsyncClient,
+    test_client: AsyncClient,
+    seed_user: dict[str, Any],
 ):
     other_email = "noaccess@example.com"
     other_user_id = await _create_verified_user(test_client, other_email)
@@ -265,7 +306,9 @@ async def test_update_access_no_existing_returns_404(
 
 
 @pytest.mark.asyncio
-async def test_update_access_self_returns_409(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_update_access_self_returns_409(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Self Update Project", "org_id": seed_user["org_id"]},
