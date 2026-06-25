@@ -7,7 +7,7 @@ from coa_db_models.mappings.models import CoaMapping
 from coa_db_models.projects.models import Project, ProjectAccess
 from sqlalchemy import select
 
-from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
+from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.modules.projects.protocols import (
     OrgMembershipReaderProtocol,
     ProjectAccessRepositoryProtocol,
@@ -15,7 +15,6 @@ from src.modules.projects.protocols import (
 )
 from src.modules.projects.schemas import (
     ProjectCreate,
-    ProjectCreateFull,
     ProjectUpdate,
 )
 
@@ -108,107 +107,6 @@ class ProjectService:
         if self.session:
             await self.session.commit()
         logger.info("Project '%s' created by user %s", project.name, user.id)
-        return project
-
-    async def create_project_full(self, data: ProjectCreateFull, user: User) -> Project:
-        from src.modules.erp.dependencies import get_erp_service
-
-        erp_service = get_erp_service()
-
-        # 1. Validate ERP FK references
-        if data.source_vendor_id and not erp_service.get_vendor(data.source_vendor_id):
-            raise ValidationError(f"Unknown source vendor: '{data.source_vendor_id}'")
-        if data.target_vendor_id and not erp_service.get_vendor(data.target_vendor_id):
-            raise ValidationError(f"Unknown target vendor: '{data.target_vendor_id}'")
-        if data.source_product_id and not erp_service.get_system(data.source_product_id):
-            raise ValidationError(f"Unknown source product: '{data.source_product_id}'")
-        if data.target_product_id and not erp_service.get_system(data.target_product_id):
-            raise ValidationError(f"Unknown target product: '{data.target_product_id}'")
-
-        # 2. Compatibility check (action=create only)
-        if (
-            data.action == "create"
-            and data.source_product_id
-            and data.target_product_id
-            and data.source_connection_method_id
-        ):
-            is_compatible, message = erp_service.check_compatibility(
-                data.source_product_id,
-                data.target_product_id,
-                data.source_connection_method_id,
-            )
-            if not is_compatible:
-                raise ValidationError(message)
-
-        # 3. MCP config guard
-        if data.source_connection_method_id:
-            conn_method = erp_service.get_connection_method(data.source_connection_method_id)
-            if (
-                conn_method
-                and conn_method.get("requires_mcp_config")
-                and data.action == "create"
-                and not data.mcp_connection_config
-            ):
-                raise ValidationError(
-                    "mcp_connection_config is required when using MCP Server connection method"
-                )
-
-        if data.org_id is None:
-            raise ValidationError("org_id is required")
-
-        # 4. Create project row
-        project = await self.project_repo.create_project(
-            org_id=data.org_id,
-            name=data.name,
-            description=data.description,
-            source_system=data.source_product_id or "",
-            target_system=data.target_product_id or "",
-            status="active" if data.action == "create" else "draft",
-            created_by=user.id,
-            updated_by=user.id,
-        )
-
-        # 5 & 6. Persist wizard-compatible ERP fields and MCP config via forward-compatible setattr
-        _erp_extra: dict = {
-            "source_vendor_id": data.source_vendor_id,
-            "source_connection_method": data.source_connection_method_id,
-            "target_vendor_id": data.target_vendor_id,
-            "target_connection_method": data.target_connection_method_id,
-        }
-        for field, value in _erp_extra.items():
-            if value is not None and hasattr(project, field):
-                setattr(project, field, value)
-
-        if data.mcp_connection_config:
-            if hasattr(project, "mcp_server_url"):
-                project.mcp_server_url = data.mcp_connection_config.server_url
-            if hasattr(project, "mcp_api_key"):
-                project.mcp_api_key = data.mcp_connection_config.api_key
-
-        # 7. Requester always added as admin
-        await self.access_repo.grant(
-            user_id=user.id,
-            project_id=project.id,
-            permission="admin",
-            assigned_by=user.id,
-        )
-
-        # 8. Add members (skip requester — already admin above)
-        for member in data.members:
-            if member.user_id != user.id:
-                await self.access_repo.grant(
-                    user_id=member.user_id,
-                    project_id=project.id,
-                    permission=member.permission,
-                    assigned_by=user.id,
-                )
-
-        # 9. Single commit
-        if self.session:
-            await self.session.commit()
-            await self.session.refresh(project)
-
-        logger.info("Project '%s' created (action=%s) by user %s", project.name, data.action, user.id)
         return project
 
     async def get_project(self, project_id: UUID) -> Project:

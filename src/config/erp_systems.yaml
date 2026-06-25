@@ -2,16 +2,12 @@
 connection_methods:
   cloud_saas:
     name: Cloud (SaaS)
-    requires_mcp_config: false
   on_premise:
     name: On-Premise (Self-Hosted)
-    requires_mcp_config: false
   mcp_server:
     name: MCP Server (Model Context Protocol)
-    requires_mcp_config: true
   csv_file:
     name: CSV File (upload)
-    requires_mcp_config: false
 
 # ── Vendor catalogue ──────────────────────────────────────────────────────────
 vendors:
