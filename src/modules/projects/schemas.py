@@ -1,7 +1,8 @@
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class MigrationScopeItem(BaseModel):
@@ -147,3 +148,62 @@ class AccessResponse(BaseModel):
     user_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── Full atomic creation payload (DAB-9) ──────────────────────────────────────
+
+
+class MasterDataSelectionItem(BaseModel):
+    data_type: str
+    selected: bool = True
+
+
+class OpeningBalanceSelectionItem(BaseModel):
+    account_type: str
+    include: bool = True
+
+
+class McpConnectionConfigCreate(BaseModel):
+    server_url: str
+    api_key: str | None = None
+
+
+class MemberAdd(BaseModel):
+    user_id: uuid.UUID
+    permission: str = "viewer"
+
+
+class ProjectCreateFull(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = None
+    action: Literal["draft", "create"] = "draft"
+    org_id: uuid.UUID | None = None
+
+    source_vendor_id: str | None = None
+    source_product_id: str | None = None
+    source_connection_method_id: str | None = None
+
+    target_vendor_id: str | None = None
+    target_product_id: str | None = None
+    target_connection_method_id: str | None = None
+
+    master_data_selections: list[MasterDataSelectionItem] = []
+    opening_balance_selections: list[OpeningBalanceSelectionItem] = []
+    mcp_connection_config: McpConnectionConfigCreate | None = None
+    members: list[MemberAdd] = []
+
+    @model_validator(mode="after")
+    def validate_for_create(self) -> "ProjectCreateFull":
+        if self.action == "create":
+            required = [
+                "source_vendor_id",
+                "source_product_id",
+                "source_connection_method_id",
+                "target_vendor_id",
+                "target_product_id",
+                "target_connection_method_id",
+            ]
+            missing = [f for f in required if getattr(self, f) is None]
+            if missing:
+                raise ValueError(f"action=create requires: {', '.join(missing)}")
+        return self
