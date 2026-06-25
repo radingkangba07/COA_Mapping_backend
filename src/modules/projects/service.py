@@ -22,11 +22,42 @@ logger = logging.getLogger(__name__)
 
 PERMISSION_LEVELS = {"viewer": 1, "editor": 2, "approver": 3, "admin": 4}
 
+# Fields added by the data-migration wizard that require a DB migration in
+# coa-db-models before they can be persisted. The service sets them
+# via setattr only when the ORM model already exposes them, so this code
+# is forward-compatible: once the migration runs, persistence is automatic.
+_WIZARD_FIELDS = (
+    "source_vendor_id",
+    "source_connection_method",
+    "source_protocol",
+    "target_vendor_id",
+    "target_connection_method",
+    "target_protocol",
+    "migration_scope",
+    "starting_balance",
+    "source_date",
+    "mcp_server_url",
+    "mcp_api_key",
+)
+
 
 def permission_level(perm: str | None) -> int:
     if perm is None:
         return 0
     return PERMISSION_LEVELS.get(perm, 0)
+
+
+def _apply_wizard_fields(project: Project, data: ProjectCreate | ProjectUpdate) -> None:
+    """Write wizard fields onto the ORM object when the model supports them."""
+    for field in _WIZARD_FIELDS:
+        value = getattr(data, field, None)
+        if value is None:
+            continue
+        if not hasattr(project, field):
+            continue
+        if field == "migration_scope" and not isinstance(value, (dict, list)):
+            value = [item.model_dump() for item in value]
+        setattr(project, field, value)
 
 
 class ProjectService:
@@ -54,12 +85,25 @@ class ProjectService:
             created_by=user.id,
             updated_by=user.id,
         )
+        _apply_wizard_fields(project, data)
+
         await self.access_repo.grant(
             user_id=user.id,
             project_id=project.id,
             permission="admin",
             assigned_by=user.id,
         )
+
+        if data.members:
+            for member in data.members:
+                try:
+                    await self.grant_access(project.id, member.email, member.permission, user)
+                except Exception:
+                    logger.warning(
+                        "Could not grant access to '%s' during project creation: skipped",
+                        member.email,
+                    )
+
         if self.session:
             await self.session.commit()
         logger.info("Project '%s' created by user %s", project.name, user.id)
@@ -103,7 +147,7 @@ class ProjectService:
     @staticmethod
     def _project_row_to_dict(row: Any, effective_permission: str | None = None) -> dict:
         project: Project = row[0]
-        return {
+        base = {
             "id": project.id,
             "org_id": project.org_id,
             "name": project.name,
@@ -120,15 +164,23 @@ class ProjectService:
             "updated_at": project.updated_at,
             "effective_permission": effective_permission,
         }
+        # Include wizard fields when the ORM model supports them
+        for field in _WIZARD_FIELDS:
+            base[field] = getattr(project, field, None)
+        return base
 
     async def update_project(self, project_id: UUID, data: ProjectUpdate, user: User | None = None) -> Project:
         project = await self.get_project(project_id)
         update_data = data.model_dump(exclude_unset=True)
-        allowed = {"name", "description", "status", "current_step", "source_system", "target_system"}
+        allowed = {
+            "name", "description", "status", "current_step",
+            "source_system", "target_system",
+            *_WIZARD_FIELDS,
+        }
         filtered = {k: v for k, v in update_data.items() if k in allowed}
-        if not filtered and not user:
-            return project
         for key, value in filtered.items():
+            if key in _WIZARD_FIELDS and not hasattr(project, key):
+                continue
             setattr(project, key, value)
         if user:
             project.updated_by = user.id
@@ -167,7 +219,7 @@ class ProjectService:
             if member is None:
                 raise ForbiddenError(
                     f"User '{email}' is not a member of this project's organization. "
-                    "Invite them to the organization first."
+                    "Invite them to the organisation first."
                 )
         result = await self.access_repo.grant(
             user_id=target_user.id,
@@ -261,7 +313,7 @@ class ProjectService:
         creator = await self.session.get(UserModel, project.created_by)
         created_by_name = creator.name if creator else None
 
-        return {
+        detail: dict = {
             "id": str(project.id),
             "org_id": str(project.org_id),
             "name": project.name,
@@ -306,3 +358,7 @@ class ProjectService:
             "updated_by_name": updated_by_name,
             "mapping_stats": stats,
         }
+        # Include wizard fields when the ORM model supports them
+        for field in _WIZARD_FIELDS:
+            detail[field] = getattr(project, field, None)
+        return detail

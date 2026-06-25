@@ -12,7 +12,21 @@ class ERPSystem(BaseModel):
     id: str
     name: str
     description: str = ""
+    vendor_id: str | None = None
+    vendor_name: str | None = None
+    connection_methods: list[str] = []
     fields: list[ERPField] = []
+
+
+class ERPVendor(BaseModel):
+    id: str
+    name: str
+    products: list[str] = []
+
+
+class ConnectionMethod(BaseModel):
+    id: str
+    name: str
 
 
 class AccountTypesResponse(BaseModel):

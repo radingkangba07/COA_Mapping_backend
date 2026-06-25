@@ -1,27 +1,92 @@
+# ── Connection method definitions ────────────────────────────────────────────
+connection_methods:
+  cloud_saas:
+    name: Cloud (SaaS)
+  on_premise:
+    name: On-Premise (Self-Hosted)
+  mcp_server:
+    name: MCP Server (Model Context Protocol)
+  csv_file:
+    name: CSV File (upload)
+
+# ── Vendor catalogue ──────────────────────────────────────────────────────────
+vendors:
+  microsoft:
+    name: Microsoft
+    products: [microsoft_dynamics]
+  sap:
+    name: SAP
+    products: [sap]
+  oracle:
+    name: Oracle
+    products: [oracle_netsuite]
+  intuit:
+    name: Intuit
+    products: [quickbooks]
+  sage:
+    name: Sage
+    products: [sage, pastel]
+  xero:
+    name: Xero
+    products: [xero]
+  odoo:
+    name: Odoo
+    products: [odoo]
+  zoho:
+    name: Zoho
+    products: [zoho]
+
+# ── ERP product catalogue ─────────────────────────────────────────────────────
 sap:
   name: SAP
+  vendor_id: sap
+  vendor_name: SAP
+  connection_methods: [on_premise, mcp_server, csv_file]
 
 oracle_netsuite:
   name: Oracle NetSuite
+  vendor_id: oracle
+  vendor_name: Oracle
+  connection_methods: [cloud_saas, mcp_server, csv_file]
 
 microsoft_dynamics:
   name: Microsoft Dynamics 365
+  vendor_id: microsoft
+  vendor_name: Microsoft
+  connection_methods: [cloud_saas, on_premise, mcp_server, csv_file]
 
 quickbooks:
   name: QuickBooks
+  vendor_id: intuit
+  vendor_name: Intuit
+  connection_methods: [cloud_saas, csv_file]
 
 sage:
   name: Sage Intacct
+  vendor_id: sage
+  vendor_name: Sage
+  connection_methods: [cloud_saas, mcp_server, csv_file]
 
 xero:
   name: Xero
+  vendor_id: xero
+  vendor_name: Xero
+  connection_methods: [cloud_saas, mcp_server, csv_file]
 
 pastel:
   name: Pastel
+  vendor_id: sage
+  vendor_name: Sage
+  connection_methods: [on_premise, csv_file]
 
 odoo:
   name: Odoo
+  vendor_id: odoo
+  vendor_name: Odoo
+  connection_methods: [cloud_saas, on_premise, mcp_server, csv_file]
 
 zoho:
   name: Zoho Books
-
+  vendor_id: zoho
+  vendor_name: Zoho
+  connection_methods: [cloud_saas, csv_file]

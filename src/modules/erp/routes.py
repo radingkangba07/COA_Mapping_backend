@@ -7,13 +7,64 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.core.exceptions import NotFoundError
 from src.modules.erp.dependencies import get_erp_service
-from src.modules.erp.schemas import AccountTypesResponse, ERPSystem, SampleDataResponse
+from src.modules.erp.schemas import (
+    AccountTypesResponse,
+    ConnectionMethod,
+    ERPSystem,
+    ERPVendor,
+    SampleDataResponse,
+)
 from src.modules.erp.service import ERPConfigService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/erp-systems", tags=["erp"])
 legacy_erp_router = APIRouter(prefix="/api/v1", tags=["erp"], include_in_schema=False)
+
+
+# ── Vendor endpoints (must be declared before /{erp_id}) ─────────────────────
+
+
+@router.get("/vendors", response_model=list[ERPVendor])
+async def list_vendors(service: ERPConfigService = Depends(get_erp_service)):
+    try:
+        return [ERPVendor(**v) for v in service.get_vendors()]
+    except Exception:
+        logger.exception("Failed to list ERP vendors")
+        return JSONResponse(status_code=500, content={"detail": "Failed to load vendors"})
+
+
+@router.get("/vendors/{vendor_id}/products", response_model=list[ERPSystem])
+async def list_vendor_products(vendor_id: str, service: ERPConfigService = Depends(get_erp_service)):
+    try:
+        vendor = service.get_vendor(vendor_id)
+        if not vendor:
+            raise NotFoundError(f"Vendor '{vendor_id}' not found")
+        products = service.get_products_for_vendor(vendor_id)
+        return [
+            ERPSystem(id=p["id"], name=p["name"], **{k: v for k, v in p.items() if k not in ("id", "name")})
+            for p in products
+        ]
+    except NotFoundError:
+        raise
+    except Exception:
+        logger.exception("Failed to list products for vendor '%s'", vendor_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to load vendor products"})
+
+
+# ── Connection methods (static list) ─────────────────────────────────────────
+
+
+@router.get("/connection-methods", response_model=list[ConnectionMethod])
+async def list_connection_methods(service: ERPConfigService = Depends(get_erp_service)):
+    try:
+        return [ConnectionMethod(**m) for m in service.get_all_connection_methods()]
+    except Exception:
+        logger.exception("Failed to list connection methods")
+        return JSONResponse(status_code=500, content={"detail": "Failed to load connection methods"})
+
+
+# ── ERP product endpoints ─────────────────────────────────────────────────────
 
 
 @router.get("", response_model=list[ERPSystem])
@@ -39,6 +90,9 @@ async def get_erp_system(erp_id: str, service: ERPConfigService = Depends(get_er
             id=system["id"],
             name=system["name"],
             description=system.get("description", ""),
+            vendor_id=system.get("vendor_id"),
+            vendor_name=system.get("vendor_name"),
+            connection_methods=system.get("connection_methods", []),
             fields=system.get("fields", []),
         )
     except NotFoundError:
@@ -46,6 +100,20 @@ async def get_erp_system(erp_id: str, service: ERPConfigService = Depends(get_er
     except Exception:
         logger.exception("Failed to get ERP system '%s'", erp_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to load ERP system"})
+
+
+@router.get("/{erp_id}/connection-methods", response_model=list[ConnectionMethod])
+async def get_erp_connection_methods(erp_id: str, service: ERPConfigService = Depends(get_erp_service)):
+    try:
+        system = service.get_system(erp_id)
+        if not system:
+            raise NotFoundError(f"ERP system '{erp_id}' not found")
+        return [ConnectionMethod(**m) for m in service.get_connection_methods_for_erp(erp_id)]
+    except NotFoundError:
+        raise
+    except Exception:
+        logger.exception("Failed to get connection methods for '%s'", erp_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to load connection methods"})
 
 
 @router.get("/{erp_id}/account-types", response_model=AccountTypesResponse)
