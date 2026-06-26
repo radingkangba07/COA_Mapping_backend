@@ -27,6 +27,9 @@ class ERPVendor(BaseModel):
 class ConnectionMethod(BaseModel):
     id: str
     name: str
+    # DA-7 subtask 3: expose requires_mcp_config and description required by the project wizard
+    requires_mcp_config: bool = False
+    description: str | None = None
 
 
 class AccountTypesResponse(BaseModel):
