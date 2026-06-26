@@ -53,7 +53,7 @@ RESEND_FROM_EMAIL=noreply@yourdomain.com
 
 ### 5. Run database migrations
 
-Migrations are managed in the [coa-db-models](https://github.com/bhavna-linkedrp/coa-db-models.) repo. Clone it and run:
+Migrations are managed in the [coa-db-models](https://github.com/radingkangba07/LinkedERP_coa_db_models) repo. Clone it and run:
 
 ```bash
 cd ../coa-db-models
