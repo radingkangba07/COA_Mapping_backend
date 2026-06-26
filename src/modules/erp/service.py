@@ -3,6 +3,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import yaml
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.modules.erp.models import ErpCompatibilityRule
 
 _RESERVED = {"vendors", "connection_methods"}
 _CACHE_TTL = 600  # DA-7 subtask: 600 s TTL applied to all ERP list responses
@@ -135,3 +139,38 @@ class ERPConfigService:
                 f"Connection method '{connection_method_id}' is not supported by '{source['name']}'",
             )
         return True, "Compatible"
+
+
+async def check_compatibility_db(
+    session: AsyncSession,
+    source_product_id: str,
+    target_product_id: str,
+    connection_method_id: str,
+) -> tuple[bool, str]:
+    """Query erp_compatibility_rules. Specific rules (with connection_method_id) take
+    precedence over general rules (connection_method_id IS NULL). Defaults to compatible
+    when no rule matches."""
+    specific = await session.execute(
+        select(ErpCompatibilityRule).where(
+            ErpCompatibilityRule.source_product_id == source_product_id,
+            ErpCompatibilityRule.target_product_id == target_product_id,
+            ErpCompatibilityRule.connection_method_id == connection_method_id,
+        )
+    )
+    rule = specific.scalar_one_or_none()
+
+    if rule is None:
+        general = await session.execute(
+            select(ErpCompatibilityRule).where(
+                ErpCompatibilityRule.source_product_id == source_product_id,
+                ErpCompatibilityRule.target_product_id == target_product_id,
+                ErpCompatibilityRule.connection_method_id.is_(None),
+            )
+        )
+        rule = general.scalar_one_or_none()
+
+    if rule is None:
+        return True, "Selected systems and connection methods are compatible for migration."
+    if rule.is_compatible:
+        return True, "Selected systems and connection methods are compatible for migration."
+    return False, rule.incompatibility_reason or "The selected combination is not supported for migration."
