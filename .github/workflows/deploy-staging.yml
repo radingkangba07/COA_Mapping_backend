@@ -21,7 +21,7 @@ on:
       - "src/**"
       - "pyproject.toml"
       - "uv.lock"
-      - "alembic.ini"
+      - "Dockerfile"
       - "scripts/deploy.sh"
       - ".github/workflows/deploy-staging.yml"
   workflow_dispatch:   # allow manual re-deploy from the Actions tab

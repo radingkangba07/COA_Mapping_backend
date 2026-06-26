@@ -23,7 +23,7 @@ on:
       - "src/**"
       - "pyproject.toml"
       - "uv.lock"
-      - "alembic.ini"
+      - "Dockerfile"
       - "scripts/deploy.sh"
       - ".github/workflows/deploy-testing.yml"
   workflow_dispatch:   # allow manual re-deploy from the Actions tab
@@ -65,4 +65,4 @@ jobs:
             git fetch origin
             git reset --hard "origin/${BE_REF}"
             # invoke via `bash` so file mode in git index doesn't matter
-            GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" bash scripts/deploy.sh testing backend
+            GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" COA_DB_MODELS_BRANCH="develop" bash scripts/deploy.sh testing backend
