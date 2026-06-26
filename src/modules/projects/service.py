@@ -185,6 +185,34 @@ class ProjectService:
             if hasattr(project, "mcp_api_key"):
                 project.mcp_api_key = data.mcp_connection_config.api_key
 
+        # 5a. Persist master data selections (bulk-add to session; committed below)
+        if data.master_data_selections:
+            from src.modules.projects.models import ProjectMasterDataSelection
+
+            for item in data.master_data_selections:
+                self.session.add(
+                    ProjectMasterDataSelection(
+                        project_id=project.id,
+                        data_type=item.data_type,
+                        selected=item.selected,
+                    )
+                )
+            await self.session.flush()
+
+        # 5b. Persist opening balance selections
+        if data.opening_balance_selections:
+            from src.modules.projects.models import ProjectOpeningBalanceSelection
+
+            for item in data.opening_balance_selections:
+                self.session.add(
+                    ProjectOpeningBalanceSelection(
+                        project_id=project.id,
+                        account_type=item.account_type,
+                        include=item.include,
+                    )
+                )
+            await self.session.flush()
+
         # 7. Requester always added as admin
         await self.access_repo.grant(
             user_id=user.id,
