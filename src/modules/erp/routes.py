@@ -68,7 +68,7 @@ async def list_vendor_products(vendor_id: str, service: ERPConfigService = Depen
     try:
         vendor = service.get_vendor(vendor_id)
         if not vendor:
-            raise NotFoundError(f"Vendor '{vendor_id}' not found")
+            return []
         products = service.get_products_for_vendor(vendor_id)
         return [
             ERPSystem(id=p["id"], name=p["name"], **{k: v for k, v in p.items() if k not in ("id", "name")})
@@ -136,10 +136,8 @@ async def get_erp_connection_methods(erp_id: str, service: ERPConfigService = De
     try:
         system = service.get_system(erp_id)
         if not system:
-            raise NotFoundError(f"ERP system '{erp_id}' not found")
+            return []
         return [ConnectionMethod(**m) for m in service.get_connection_methods_for_erp(erp_id)]
-    except NotFoundError:
-        raise
     except Exception:
         logger.exception("Failed to get connection methods for '%s'", erp_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to load connection methods"})

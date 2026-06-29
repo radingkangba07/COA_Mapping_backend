@@ -104,7 +104,7 @@ class ProjectResponse(BaseModel):
 
     # Migration configuration
     migration_scope: list[MigrationScopeItem] | None = None
-    starting_balance: bool = False
+    starting_balance: bool | None = None
     source_date: date | None = None
 
     # MCP connection details (api key is intentionally excluded from responses)
@@ -191,6 +191,15 @@ class ProjectCreateFull(BaseModel):
     opening_balance_selections: list[OpeningBalanceSelectionItem] = []
     mcp_connection_config: McpConnectionConfigCreate | None = None
     members: list[MemberAdd] = []
+
+    @model_validator(mode="after")
+    def validate_no_mcp_server(self) -> "ProjectCreateFull":
+        for field in ("source_connection_method_id", "target_connection_method_id"):
+            if getattr(self, field) == "mcp_server":
+                raise ValueError(
+                    f"{field}: mcp_server must be configured through the dedicated MCP setup flow"
+                )
+        return self
 
     @model_validator(mode="after")
     def validate_for_create(self) -> "ProjectCreateFull":

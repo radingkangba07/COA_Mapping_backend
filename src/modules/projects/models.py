@@ -36,3 +36,19 @@ class ProjectOpeningBalanceSelection(Base):
     )
     account_type: Mapped[str] = mapped_column(String(100), nullable=False)
     include: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class ProjectWizardFields(Base):
+    """Stores ERP wizard fields not yet present in the coa-db-models Project ORM model."""
+
+    __tablename__ = "project_wizard_fields"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    source_vendor_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    target_vendor_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_connection_method: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    target_connection_method: Mapped[str | None] = mapped_column(String(100), nullable=True)
