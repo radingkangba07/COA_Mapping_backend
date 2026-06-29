@@ -3,8 +3,8 @@ import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from coa_db_models.auth.models import User
 import fastapi
+from coa_db_models.auth.models import User
 
 from src.core.config import get_settings
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError

@@ -20,9 +20,7 @@ Notes:
 from typing import Any
 from uuid import UUID
 
-import pytest
 from httpx import AsyncClient
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -79,9 +77,7 @@ async def _add_to_org(user_id: str, org_id: str) -> None:
 
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
-        await OrganizationRepository(session).create_member(
-            user_id=UUID(user_id), org_id=UUID(org_id), role="member"
-        )
+        await OrganizationRepository(session).create_member(user_id=UUID(user_id), org_id=UUID(org_id), role="member")
         await session.commit()
         return
 
@@ -97,22 +93,16 @@ async def _get_token_for(user_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def test_wizard_draft_minimal(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_wizard_draft_minimal(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     """action=draft with only name and org_id must return 201 with status=draft."""
-    resp = await authenticated_client.post(
-        "/api/v1/projects", json=_draft_payload(seed_user["org_id"])
-    )
+    resp = await authenticated_client.post("/api/v1/projects", json=_draft_payload(seed_user["org_id"]))
     assert resp.status_code == 201
     data = resp.json()
     assert data["status"] == "draft"
     assert data["name"] == "Wizard Project"
 
 
-async def test_wizard_draft_with_partial_erp_config(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_wizard_draft_with_partial_erp_config(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     """action=draft with partial ERP fields must be accepted without validation errors."""
     resp = await authenticated_client.post(
         "/api/v1/projects",
@@ -126,13 +116,9 @@ async def test_wizard_draft_with_partial_erp_config(
     assert resp.json()["status"] == "draft"
 
 
-async def test_wizard_draft_creator_is_auto_admin(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_wizard_draft_creator_is_auto_admin(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     """The project creator must automatically receive admin access."""
-    resp = await authenticated_client.post(
-        "/api/v1/projects", json=_draft_payload(seed_user["org_id"])
-    )
+    resp = await authenticated_client.post("/api/v1/projects", json=_draft_payload(seed_user["org_id"]))
     project_id = resp.json()["id"]
 
     access_resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/access")
@@ -149,9 +135,7 @@ async def test_wizard_create_valid_erp_combo_returns_active(
     authenticated_client: AsyncClient, seed_user: dict[str, Any]
 ):
     """action=create with a valid ERP combination must return 201 and status=active."""
-    resp = await authenticated_client.post(
-        "/api/v1/projects", json=_create_payload(seed_user["org_id"])
-    )
+    resp = await authenticated_client.post("/api/v1/projects", json=_create_payload(seed_user["org_id"]))
     assert resp.status_code == 201
     assert resp.json()["status"] == "active"
 
@@ -270,9 +254,7 @@ async def test_wizard_create_mcp_server_without_config_returns_422(
 
 
 # REQUIRES: Card 5 — blanket schema rejection of mcp_server
-async def test_wizard_mcp_server_rejected_even_for_draft(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_wizard_mcp_server_rejected_even_for_draft(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     """mcp_server must be rejected at schema level for both draft and create actions."""
     resp = await authenticated_client.post(
         "/api/v1/projects",
@@ -290,9 +272,7 @@ async def test_wizard_mcp_server_rejected_even_for_draft(
 
 
 # REQUIRES: Card 1 (DB columns) + Card 3 (scope persistence in service)
-async def test_wizard_create_master_data_scope_is_stored(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_wizard_create_master_data_scope_is_stored(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     """master_data_selections must be persisted and returned in migration_scope."""
     payload = _draft_payload(
         seed_user["org_id"],
@@ -364,10 +344,7 @@ async def test_wizard_create_with_members_grants_access(
     access_resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/access")
     assert access_resp.status_code == 200
     access_list = access_resp.json()
-    assert any(
-        a["user_id"] == member_id and a["permission"] == "editor"
-        for a in access_list
-    )
+    assert any(a["user_id"] == member_id and a["permission"] == "editor" for a in access_list)
 
 
 async def test_wizard_create_creator_always_admin_regardless_of_members(
@@ -389,9 +366,7 @@ async def test_wizard_create_creator_always_admin_regardless_of_members(
 
     access_resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/access")
     access_list = access_resp.json()
-    creator_entry = next(
-        (a for a in access_list if a["user_id"] == seed_user["user_id"]), None
-    )
+    creator_entry = next((a for a in access_list if a["user_id"] == seed_user["user_id"]), None)
     assert creator_entry is not None
     assert creator_entry["permission"] == "admin"
 
@@ -427,9 +402,7 @@ async def test_get_project_returns_source_and_target_vendor(
 
 async def test_get_project_not_found_returns_404(authenticated_client: AsyncClient):
     """GET on a non-existent project UUID must return 404."""
-    resp = await authenticated_client.get(
-        "/api/v1/projects/00000000-0000-0000-0000-000000000000"
-    )
+    resp = await authenticated_client.get("/api/v1/projects/00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 404
 
 
@@ -439,14 +412,10 @@ async def test_get_project_without_access_returns_403(
     seed_user: dict[str, Any],
 ):
     """A user with no project access must receive 403 on GET."""
-    create_resp = await authenticated_client.post(
-        "/api/v1/projects", json=_draft_payload(seed_user["org_id"])
-    )
+    create_resp = await authenticated_client.post("/api/v1/projects", json=_draft_payload(seed_user["org_id"]))
     project_id = create_resp.json()["id"]
 
-    stranger_id = await _register_and_verify(
-        test_client, "stranger@example.com", "Stranger Org"
-    )
+    stranger_id = await _register_and_verify(test_client, "stranger@example.com", "Stranger Org")
     stranger_token = await _get_token_for(stranger_id)
 
     resp = await test_client.get(
@@ -461,13 +430,9 @@ async def test_get_project_without_access_returns_403(
 # ---------------------------------------------------------------------------
 
 
-async def test_list_projects_returns_paginated_response(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_list_projects_returns_paginated_response(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     """GET /api/v1/projects must return a paginated wrapper with projects and total."""
-    await authenticated_client.post(
-        "/api/v1/projects", json=_draft_payload(seed_user["org_id"])
-    )
+    await authenticated_client.post("/api/v1/projects", json=_draft_payload(seed_user["org_id"]))
     resp = await authenticated_client.get("/api/v1/projects")
     assert resp.status_code == 200
     data = resp.json()
@@ -476,16 +441,10 @@ async def test_list_projects_returns_paginated_response(
     assert len(data["projects"]) >= 1
 
 
-async def test_list_projects_filtered_by_org_id(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_list_projects_filtered_by_org_id(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     """GET /api/v1/projects?org_id=... must only return projects for that org."""
-    await authenticated_client.post(
-        "/api/v1/projects", json=_draft_payload(seed_user["org_id"])
-    )
-    resp = await authenticated_client.get(
-        f"/api/v1/projects?org_id={seed_user['org_id']}"
-    )
+    await authenticated_client.post("/api/v1/projects", json=_draft_payload(seed_user["org_id"]))
+    resp = await authenticated_client.get(f"/api/v1/projects?org_id={seed_user['org_id']}")
     assert resp.status_code == 200
     projects = resp.json()["projects"]
     assert all(p["org_id"] == seed_user["org_id"] for p in projects)
@@ -497,13 +456,9 @@ async def test_list_projects_filtered_by_org_id(
 
 
 # REQUIRES: Card 1 (DB columns) for ERP fields to be readable back after update
-async def test_patch_project_updates_erp_vendor_fields(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_patch_project_updates_erp_vendor_fields(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     """PATCH must persist updated source/target vendor IDs."""
-    create_resp = await authenticated_client.post(
-        "/api/v1/projects", json=_draft_payload(seed_user["org_id"])
-    )
+    create_resp = await authenticated_client.post("/api/v1/projects", json=_draft_payload(seed_user["org_id"]))
     project_id = create_resp.json()["id"]
 
     resp = await authenticated_client.patch(
@@ -516,13 +471,9 @@ async def test_patch_project_updates_erp_vendor_fields(
     assert data["target_vendor_id"] == "microsoft"
 
 
-async def test_patch_project_updates_name_and_description(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_patch_project_updates_name_and_description(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     """PATCH must update name and description fields."""
-    create_resp = await authenticated_client.post(
-        "/api/v1/projects", json=_draft_payload(seed_user["org_id"])
-    )
+    create_resp = await authenticated_client.post("/api/v1/projects", json=_draft_payload(seed_user["org_id"]))
     project_id = create_resp.json()["id"]
 
     resp = await authenticated_client.patch(
@@ -546,9 +497,7 @@ async def test_patch_project_viewer_access_returns_403(
     await _add_to_org(viewer_id, seed_user["org_id"])
     viewer_token = await _get_token_for(viewer_id)
 
-    create_resp = await authenticated_client.post(
-        "/api/v1/projects", json=_draft_payload(seed_user["org_id"])
-    )
+    create_resp = await authenticated_client.post("/api/v1/projects", json=_draft_payload(seed_user["org_id"]))
     project_id = create_resp.json()["id"]
 
     await authenticated_client.post(
@@ -573,9 +522,7 @@ async def test_delete_project_by_admin_returns_deleted_status(
     authenticated_client: AsyncClient, seed_user: dict[str, Any]
 ):
     """The project admin must be able to delete the project."""
-    create_resp = await authenticated_client.post(
-        "/api/v1/projects", json=_draft_payload(seed_user["org_id"])
-    )
+    create_resp = await authenticated_client.post("/api/v1/projects", json=_draft_payload(seed_user["org_id"]))
     project_id = create_resp.json()["id"]
     resp = await authenticated_client.delete(f"/api/v1/projects/{project_id}")
     assert resp.status_code == 200
@@ -583,9 +530,7 @@ async def test_delete_project_by_admin_returns_deleted_status(
 
 
 async def test_delete_project_editor_returns_403(
-    authenticated_client: AsyncClient,
-    test_client: AsyncClient,
-    seed_user: dict[str, Any]
+    authenticated_client: AsyncClient, test_client: AsyncClient, seed_user: dict[str, Any]
 ):
     """An editor must receive 403 when attempting to delete a project."""
     editor_email = "editor_del@example.com"
@@ -593,9 +538,7 @@ async def test_delete_project_editor_returns_403(
     await _add_to_org(editor_id, seed_user["org_id"])
     editor_token = await _get_token_for(editor_id)
 
-    create_resp = await authenticated_client.post(
-        "/api/v1/projects", json=_draft_payload(seed_user["org_id"])
-    )
+    create_resp = await authenticated_client.post("/api/v1/projects", json=_draft_payload(seed_user["org_id"]))
     project_id = create_resp.json()["id"]
 
     await authenticated_client.post(
@@ -615,9 +558,7 @@ async def test_delete_project_editor_returns_403(
 # ---------------------------------------------------------------------------
 
 
-async def test_create_project_unauthenticated_returns_401(
-    test_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_create_project_unauthenticated_returns_401(test_client: AsyncClient, seed_user: dict[str, Any]):
     """POST /api/v1/projects without a token must return 401."""
     resp = await test_client.post(
         "/api/v1/projects",
@@ -713,7 +654,14 @@ async def test_get_all_erp_systems_returns_full_catalogue(test_client: AsyncClie
     assert resp.status_code == 200
     system_ids = {s["id"] for s in resp.json()}
     for expected in (
-        "sap", "oracle_netsuite", "microsoft_dynamics",
-        "quickbooks", "sage", "xero", "pastel", "odoo", "zoho",
+        "sap",
+        "oracle_netsuite",
+        "microsoft_dynamics",
+        "quickbooks",
+        "sage",
+        "xero",
+        "pastel",
+        "odoo",
+        "zoho",
     ):
         assert expected in system_ids, f"ERP product '{expected}' missing from catalogue"

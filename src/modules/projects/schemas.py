@@ -196,9 +196,7 @@ class ProjectCreateFull(BaseModel):
     def validate_no_mcp_server(self) -> "ProjectCreateFull":
         for field in ("source_connection_method_id", "target_connection_method_id"):
             if getattr(self, field) == "mcp_server":
-                raise ValueError(
-                    f"{field}: mcp_server must be configured through the dedicated MCP setup flow"
-                )
+                raise ValueError(f"{field}: mcp_server must be configured through the dedicated MCP setup flow")
         return self
 
     @model_validator(mode="after")
