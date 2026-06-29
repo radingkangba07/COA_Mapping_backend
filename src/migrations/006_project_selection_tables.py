@@ -10,6 +10,7 @@ Create Date: 2026-06-26
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 revision = "006"
 down_revision = "005"
@@ -20,10 +21,10 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "project_master_data_selections",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("id", PG_UUID(as_uuid=True), primary_key=True),
         sa.Column(
             "project_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            PG_UUID(as_uuid=True),
             sa.ForeignKey("projects.id", ondelete="CASCADE"),
             nullable=False,
         ),
@@ -38,10 +39,10 @@ def upgrade() -> None:
 
     op.create_table(
         "project_opening_balance_selections",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("id", PG_UUID(as_uuid=True), primary_key=True),
         sa.Column(
             "project_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            PG_UUID(as_uuid=True),
             sa.ForeignKey("projects.id", ondelete="CASCADE"),
             nullable=False,
         ),
