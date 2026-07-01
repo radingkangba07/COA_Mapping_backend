@@ -11,9 +11,9 @@ Covers:
 import uuid
 
 import pytest
+from coa_db_models import ErpCompatibilityRule
 from httpx import AsyncClient
 
-from src.modules.erp.models import ErpCompatibilityRule
 from src.modules.erp.service import check_compatibility_db
 
 # ---------------------------------------------------------------------------

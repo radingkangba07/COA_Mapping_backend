@@ -3,10 +3,9 @@ from pathlib import Path
 from typing import Any, cast
 
 import yaml
+from coa_db_models import ErpCompatibilityRule
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.modules.erp.models import ErpCompatibilityRule
 
 _RESERVED = {"vendors", "connection_methods"}
 _CACHE_TTL = 600  # DA-7 subtask: 600 s TTL applied to all ERP list responses
