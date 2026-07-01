@@ -17,6 +17,11 @@ class OpeningBalanceSelectionItem(BaseModel):
     include: bool = True
 
 
+class MasterDataSelectionItem(BaseModel):
+    data_type: str
+    selected: bool = True
+
+
 class MemberInvite(BaseModel):
     email: str
     permission: str = "viewer"
@@ -88,7 +93,8 @@ class ProjectUpdate(BaseModel):
     mcp_server_url: str | None = None
     mcp_api_key: str | None = None
 
-    # Opening balance selections (replaces entries in the selection table)
+    # Selection tables (each replaces the full set when supplied)
+    master_data_selections: list[MasterDataSelectionItem] | None = None
     opening_balance_selections: list[OpeningBalanceSelectionItem] | None = None
 
 
@@ -118,7 +124,8 @@ class ProjectResponse(BaseModel):
     # MCP connection details (api key is intentionally excluded from responses)
     mcp_server_url: str | None = None
 
-    # Migration configuration detail
+    # Selection tables
+    master_data_selections: list[MasterDataSelectionItem] | None = None
     opening_balance_selections: list[OpeningBalanceSelectionItem] | None = None
 
     # Project status
@@ -162,11 +169,6 @@ class AccessResponse(BaseModel):
 
 
 # ── Full atomic creation payload (DAB-9) ──────────────────────────────────────
-
-
-class MasterDataSelectionItem(BaseModel):
-    data_type: str
-    selected: bool = True
 
 
 class McpConnectionConfigCreate(BaseModel):

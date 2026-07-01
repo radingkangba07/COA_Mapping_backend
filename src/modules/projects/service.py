@@ -283,15 +283,21 @@ class ProjectService:
             result["source_connection_method"] = wizard.source_connection_method
             result["target_connection_method"] = wizard.target_connection_method
 
-        # Build migration_scope from master data selections only
+        # Return all master data rows so the frontend can repopulate checkboxes
         master_res = await self.session.execute(
             select(ProjectMasterDataSelection).where(
                 ProjectMasterDataSelection.project_id == project_id,
-                ProjectMasterDataSelection.selected.is_(True),
             )
         )
-        master_items = [{"type": r.data_type, "status": "not_started"} for r in master_res.scalars()]
-        result["migration_scope"] = master_items if master_items else None
+        master_rows = master_res.scalars().all()
+        result["master_data_selections"] = (
+            [{"data_type": r.data_type, "selected": r.selected} for r in master_rows]
+            if master_rows
+            else None
+        )
+        # migration_scope kept for backward compatibility — selected items only
+        selected_items = [{"type": r.data_type, "status": "not_started"} for r in master_rows if r.selected]
+        result["migration_scope"] = selected_items if selected_items else None
 
         # Return opening balance selections as their own field
         balance_res = await self.session.execute(
@@ -374,9 +380,24 @@ class ProjectService:
                 )
                 await self.session.execute(stmt)
 
-            if data.opening_balance_selections is not None:
-                from sqlalchemy import delete
+            from sqlalchemy import delete
 
+            if data.master_data_selections is not None:
+                await self.session.execute(
+                    delete(ProjectMasterDataSelection).where(
+                        ProjectMasterDataSelection.project_id == project_id
+                    )
+                )
+                for item in data.master_data_selections:
+                    self.session.add(
+                        ProjectMasterDataSelection(
+                            project_id=project_id,
+                            data_type=item.data_type,
+                            selected=item.selected,
+                        )
+                    )
+
+            if data.opening_balance_selections is not None:
                 await self.session.execute(
                     delete(ProjectOpeningBalanceSelection).where(
                         ProjectOpeningBalanceSelection.project_id == project_id
@@ -415,6 +436,12 @@ class ProjectService:
             result[field] = getattr(project, field, None)
         for k, v in ext.items():
             result[k] = v
+
+        if data.master_data_selections is not None:
+            result["master_data_selections"] = [
+                {"data_type": m.data_type, "selected": m.selected}
+                for m in data.master_data_selections
+            ]
 
         if data.opening_balance_selections is not None:
             result["opening_balance_selections"] = [
