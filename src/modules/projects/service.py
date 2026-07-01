@@ -291,9 +291,7 @@ class ProjectService:
         )
         master_rows = master_res.scalars().all()
         result["master_data_selections"] = (
-            [{"data_type": r.data_type, "selected": r.selected} for r in master_rows]
-            if master_rows
-            else None
+            [{"data_type": r.data_type, "selected": r.selected} for r in master_rows] if master_rows else None
         )
         # migration_scope kept for backward compatibility — selected items only
         selected_items = [{"type": r.data_type, "status": "not_started"} for r in master_rows if r.selected]
@@ -307,9 +305,7 @@ class ProjectService:
         )
         balance_rows = balance_res.scalars().all()
         result["opening_balance_selections"] = (
-            [{"account_type": r.account_type, "include": r.include} for r in balance_rows]
-            if balance_rows
-            else None
+            [{"account_type": r.account_type, "include": r.include} for r in balance_rows] if balance_rows else None
         )
 
         return result
@@ -384,9 +380,7 @@ class ProjectService:
 
             if data.master_data_selections is not None:
                 await self.session.execute(
-                    delete(ProjectMasterDataSelection).where(
-                        ProjectMasterDataSelection.project_id == project_id
-                    )
+                    delete(ProjectMasterDataSelection).where(ProjectMasterDataSelection.project_id == project_id)
                 )
                 for item in data.master_data_selections:
                     self.session.add(
@@ -439,14 +433,12 @@ class ProjectService:
 
         if data.master_data_selections is not None:
             result["master_data_selections"] = [
-                {"data_type": m.data_type, "selected": m.selected}
-                for m in data.master_data_selections
+                {"data_type": m.data_type, "selected": m.selected} for m in data.master_data_selections
             ]
 
         if data.opening_balance_selections is not None:
             result["opening_balance_selections"] = [
-                {"account_type": b.account_type, "include": b.include}
-                for b in data.opening_balance_selections
+                {"account_type": b.account_type, "include": b.include} for b in data.opening_balance_selections
             ]
 
         return result
