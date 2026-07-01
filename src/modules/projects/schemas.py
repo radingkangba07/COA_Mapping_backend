@@ -12,6 +12,11 @@ class MigrationScopeItem(BaseModel):
     end_date: date | None = None
 
 
+class OpeningBalanceSelectionItem(BaseModel):
+    account_type: str
+    include: bool = True
+
+
 class MemberInvite(BaseModel):
     email: str
     permission: str = "viewer"
@@ -83,6 +88,9 @@ class ProjectUpdate(BaseModel):
     mcp_server_url: str | None = None
     mcp_api_key: str | None = None
 
+    # Opening balance selections (replaces entries in the selection table)
+    opening_balance_selections: list[OpeningBalanceSelectionItem] | None = None
+
 
 class ProjectResponse(BaseModel):
     id: uuid.UUID
@@ -109,6 +117,9 @@ class ProjectResponse(BaseModel):
 
     # MCP connection details (api key is intentionally excluded from responses)
     mcp_server_url: str | None = None
+
+    # Migration configuration detail
+    opening_balance_selections: list[OpeningBalanceSelectionItem] | None = None
 
     # Project status
     status: str
@@ -156,11 +167,6 @@ class AccessResponse(BaseModel):
 class MasterDataSelectionItem(BaseModel):
     data_type: str
     selected: bool = True
-
-
-class OpeningBalanceSelectionItem(BaseModel):
-    account_type: str
-    include: bool = True
 
 
 class McpConnectionConfigCreate(BaseModel):

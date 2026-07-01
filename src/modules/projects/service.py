@@ -283,7 +283,7 @@ class ProjectService:
             result["source_connection_method"] = wizard.source_connection_method
             result["target_connection_method"] = wizard.target_connection_method
 
-        # Build migration_scope from the selection tables
+        # Build migration_scope from master data selections only
         master_res = await self.session.execute(
             select(ProjectMasterDataSelection).where(
                 ProjectMasterDataSelection.project_id == project_id,
@@ -291,17 +291,20 @@ class ProjectService:
             )
         )
         master_items = [{"type": r.data_type, "status": "not_started"} for r in master_res.scalars()]
+        result["migration_scope"] = master_items if master_items else None
 
+        # Return opening balance selections as their own field
         balance_res = await self.session.execute(
             select(ProjectOpeningBalanceSelection).where(
                 ProjectOpeningBalanceSelection.project_id == project_id,
-                ProjectOpeningBalanceSelection.include.is_(True),
             )
         )
-        balance_items = [{"type": r.account_type, "status": "not_started"} for r in balance_res.scalars()]
-
-        scope = master_items + balance_items
-        result["migration_scope"] = scope if scope else None
+        balance_rows = balance_res.scalars().all()
+        result["opening_balance_selections"] = (
+            [{"account_type": r.account_type, "include": r.include} for r in balance_rows]
+            if balance_rows
+            else None
+        )
 
         return result
 
@@ -370,6 +373,24 @@ class ProjectService:
                     .on_conflict_do_update(index_elements=["project_id"], set_=ext)
                 )
                 await self.session.execute(stmt)
+
+            if data.opening_balance_selections is not None:
+                from sqlalchemy import delete
+
+                await self.session.execute(
+                    delete(ProjectOpeningBalanceSelection).where(
+                        ProjectOpeningBalanceSelection.project_id == project_id
+                    )
+                )
+                for bal in data.opening_balance_selections:
+                    self.session.add(
+                        ProjectOpeningBalanceSelection(
+                            project_id=project_id,
+                            account_type=bal.account_type,
+                            include=bal.include,
+                        )
+                    )
+
             await self.session.commit()
             await self.session.refresh(project)
 
@@ -394,6 +415,13 @@ class ProjectService:
             result[field] = getattr(project, field, None)
         for k, v in ext.items():
             result[k] = v
+
+        if data.opening_balance_selections is not None:
+            result["opening_balance_selections"] = [
+                {"account_type": b.account_type, "include": b.include}
+                for b in data.opening_balance_selections
+            ]
+
         return result
 
     async def delete_project(self, project_id: UUID) -> None:
