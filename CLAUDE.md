@@ -11,7 +11,7 @@ Chart of Accounts (COA) Migration Platform — helps organizations migrate their
 The refactored modular monolith in `src/` is the **active codebase**. Legacy code (MongoDB monolith) has been removed.
 
 ### Stack
-FastAPI, PostgreSQL (asyncpg), Alembic, Pydantic v2, NATS JetStream, boto3 (DigitalOcean Spaces)
+FastAPI, PostgreSQL (asyncpg), Alembic, Pydantic v2, NATS JetStream, boto3 (DigitalOcean Spaces), structlog, Resend (transactional email), Jinja2 (email templates)
 
 ### Layout
 ```
@@ -24,22 +24,36 @@ src/
 │   ├── exceptions.py          # Domain exceptions → HTTP
 │   ├── base_repository.py     # Generic CRUD
 │   ├── nats_client.py         # JetStream lifecycle
-│   └── s3_client.py           # boto3 lifecycle
+│   ├── s3_client.py           # boto3 lifecycle
+│   ├── resend_client.py       # Resend email client lifecycle
+│   ├── audit_middleware.py    # structlog-based HTTP audit/request logging
+│   ├── logging.py             # structlog configuration
+│   └── pagination.py          # Pydantic pagination models + SQLAlchemy helpers
 ├── modules/
-│   ├── auth/                  # JWT auth (register, login, refresh)
+│   ├── auth/                  # JWT auth, registration, magic links, invitations
+│   │   ├── email_service.py   # Jinja2 + Resend email dispatch
+│   │   ├── invitation_service.py  # Organisation invitation flow
+│   │   └── templates/         # Jinja2 HTML email templates
 │   ├── projects/              # Companies, projects, access control, dashboard
 │   ├── mappings/              # Account mappings, fuzzy matching (RapidFuzz)
+│   │   ├── matching.py        # Pure fuzzy matching engine (no DB)
+│   │   ├── account_types/     # Account type mapping sub-module
+│   │   └── suggestions/       # Mapping suggestion sub-module
 │   ├── storage/               # File upload/download via DigitalOcean Spaces
+│   │   └── s3_provider.py     # S3/boto3 provider abstraction
 │   ├── jobs/                  # Async job queue via NATS JetStream
-│   └── erp/                   # ERP definitions from YAML config
+│   ├── erp/                   # ERP definitions from YAML config (no DB layer)
+│   └── websocket/             # Real-time WebSocket notifications
+│       └── connection_manager.py  # Per-project connection registry
 ├── config/
-│   ├── erp_systems.yaml
-│   └── account_type_mappings.yaml
+│   └── erp_systems.yaml
 └── migrations/                # Alembic
 ```
 
 ### Module pattern
-Each module: `models.py` → `schemas.py` → `protocols.py` (typing.Protocol) → `repository.py` → `service.py` → `routes.py` → `dependencies.py` (FastAPI Depends wiring)
+Standard modules: `models.py` → `schemas.py` → `protocols.py` (typing.Protocol) → `repository.py` → `service.py` → `routes.py` → `dependencies.py` (FastAPI Depends wiring)
+
+Exception — the `erp` module is config-driven (no DB layer): `schemas.py` → `service.py` → `routes.py` → `dependencies.py`
 
 ### Commands (refactored project)
 ```bash
@@ -88,10 +102,13 @@ docker-compose -f src/docker-compose.yml up -d
 - **Mapping bulk save is destructive** — DELETE + INSERT in a single transaction
 - **Soft delete for files** — `is_deleted` flag in DB, hard delete from DigitalOcean Spaces
 - **No parsed_data in DB** — large parsed file content stored as DO Spaces artifact, not in PostgreSQL
+- **WebSocket real-time updates** — job progress broadcast to connected clients via per-project connection registry
+- **Transactional email via Resend** — invitations, magic links, and verification emails rendered from Jinja2 HTML templates
+- **Structured logging via structlog** — all request/response audit events captured by `audit_middleware.py`
 
 ### CI (GitHub Actions)
 
-`.github/workflows/ci.yml` runs on every PR to `main` or `feat/**` branches:
+`.github/workflows/ci.yml` runs on PRs to `main`, `develop`, or `feat/**` branches, and on direct pushes to `main` or `develop`:
 
 | Job | What it catches | Needs DB? |
 |-----|----------------|-----------|
