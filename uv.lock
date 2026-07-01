@@ -292,7 +292,7 @@ wheels = [
 [[package]]
 name = "coa-db-models"
 version = "0.1.0"
-source = { git = "https://github.com/radingkangba07/LinkedERP_coa_db_models?subdirectory=coa-db-models-develop&branch=main#6e437f96a3382221644730c05aa0dcf19331fa4e" }
+source = { git = "https://github.com/radingkangba07/LinkedERP_coa_db_models?branch=develop#ff0834593b1f6c732c954615a2023e1118d57a18" }
 dependencies = [
     { name = "pgvector" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -350,7 +350,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.29" },
     { name = "bcrypt", specifier = ">=4.1" },
     { name = "boto3", specifier = ">=1.34" },
-    { name = "coa-db-models", git = "https://github.com/radingkangba07/LinkedERP_coa_db_models?subdirectory=coa-db-models-develop&branch=main" },
+    { name = "coa-db-models", git = "https://github.com/radingkangba07/LinkedERP_coa_db_models?branch=develop" },
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", specifier = ">=0.110" },
     { name = "httpx", specifier = ">=0.27" },
