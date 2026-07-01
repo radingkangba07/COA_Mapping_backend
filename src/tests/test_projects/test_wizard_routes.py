@@ -312,8 +312,8 @@ async def test_wizard_create_opening_balance_scope_is_stored(
 
     project_id = create_resp.json()["id"]
     get_resp = await authenticated_client.get(f"/api/v1/projects/{project_id}")
-    scope = get_resp.json().get("migration_scope") or []
-    stored_types = [item["type"] for item in scope]
+    selections = get_resp.json().get("opening_balance_selections") or []
+    stored_types = [item["account_type"] for item in selections]
     assert "trial_balance" in stored_types
     assert "accounts_receivable" in stored_types
 
