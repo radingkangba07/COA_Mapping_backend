@@ -39,3 +39,8 @@ class SampleDataResponse(BaseModel):
     erp_name: str
     data: list[dict]
     row_count: int
+
+
+class CompatibilityResult(BaseModel):
+    is_compatible: bool
+    message: str
