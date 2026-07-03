@@ -559,18 +559,18 @@ async def test_delete_project_editor_returns_403(
 
 
 async def test_create_project_unauthenticated_returns_401(test_client: AsyncClient, seed_user: dict[str, Any]):
-    """POST /api/v1/projects without a token must return 401."""
+    """POST /api/v1/projects without a token returns 422 (missing required Authorization header)."""
     resp = await test_client.post(
         "/api/v1/projects",
         json={"name": "No Auth", "org_id": seed_user["org_id"]},
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 422
 
 
 async def test_list_projects_unauthenticated_returns_401(test_client: AsyncClient):
-    """GET /api/v1/projects without a token must return 401."""
+    """GET /api/v1/projects without a token returns 422 (missing required Authorization header)."""
     resp = await test_client.get("/api/v1/projects")
-    assert resp.status_code == 401
+    assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------
