@@ -4,15 +4,16 @@ from uuid import UUID
 
 from coa_db_models.auth.models import Organization, User
 from coa_db_models.mappings.models import CoaMapping
-from coa_db_models.projects.models import Project, ProjectAccess
-from sqlalchemy import select
-
-from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
-from src.modules.projects.models import (
+from coa_db_models.projects.models import (
+    Project,
+    ProjectAccess,
     ProjectMasterDataSelection,
     ProjectOpeningBalanceSelection,
     ProjectWizardFields,
 )
+from sqlalchemy import select
+
+from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from src.modules.projects.protocols import (
     OrgMembershipReaderProtocol,
     ProjectAccessRepositoryProtocol,
