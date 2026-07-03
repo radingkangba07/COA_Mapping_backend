@@ -62,8 +62,4 @@ class ERPConfigService:
         if not system:
             return []
         method_ids: list[str] = system.get("connection_methods", [])
-        return [
-            {"id": mid, **self._connection_methods[mid]}
-            for mid in method_ids
-            if mid in self._connection_methods
-        ]
+        return [{"id": mid, **self._connection_methods[mid]} for mid in method_ids if mid in self._connection_methods]
