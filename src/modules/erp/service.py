@@ -62,8 +62,25 @@ class ERPConfigService:
         if not system:
             return []
         method_ids: list[str] = system.get("connection_methods", [])
-        return [
-            {"id": mid, **self._connection_methods[mid]}
-            for mid in method_ids
-            if mid in self._connection_methods
-        ]
+        return [{"id": mid, **self._connection_methods[mid]} for mid in method_ids if mid in self._connection_methods]
+
+    def get_connection_method(self, connection_method_id: str) -> dict | None:
+        if connection_method_id not in self._connection_methods:
+            return None
+        return {"id": connection_method_id, **self._connection_methods[connection_method_id]}
+
+    def check_compatibility(
+        self,
+        source_product_id: str,
+        target_product_id: str,
+        connection_method_id: str,
+    ) -> tuple[bool, str]:
+        source = self.systems.get(source_product_id)
+        if not source:
+            return False, f"Source product '{source_product_id}' not found"
+        target = self.systems.get(target_product_id)
+        if not target:
+            return False, f"Target product '{target_product_id}' not found"
+        if connection_method_id not in source.get("connection_methods", []):
+            return False, f"Connection method '{connection_method_id}' is not supported by '{source['name']}'"
+        return True, "Compatible"

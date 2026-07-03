@@ -2,12 +2,13 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from coa_db_models import ProjectMasterDataSelection, ProjectOpeningBalanceSelection, ProjectWizardFields
 from coa_db_models.auth.models import Organization, User
 from coa_db_models.mappings.models import CoaMapping
 from coa_db_models.projects.models import Project, ProjectAccess
 from sqlalchemy import select
 
-from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from src.modules.projects.protocols import (
     OrgMembershipReaderProtocol,
     ProjectAccessRepositoryProtocol,
@@ -15,6 +16,7 @@ from src.modules.projects.protocols import (
 )
 from src.modules.projects.schemas import (
     ProjectCreate,
+    ProjectCreateFull,
     ProjectUpdate,
 )
 
@@ -109,6 +111,135 @@ class ProjectService:
         logger.info("Project '%s' created by user %s", project.name, user.id)
         return project
 
+    async def create_project_full(self, data: ProjectCreateFull, user: User) -> Project:
+        from src.modules.erp.dependencies import get_erp_service
+
+        erp_service = get_erp_service()
+
+        # 1. Validate ERP FK references
+        if data.source_vendor_id and not erp_service.get_vendor(data.source_vendor_id):
+            raise ValidationError(f"Unknown source vendor: '{data.source_vendor_id}'")
+        if data.target_vendor_id and not erp_service.get_vendor(data.target_vendor_id):
+            raise ValidationError(f"Unknown target vendor: '{data.target_vendor_id}'")
+        if data.source_product_id and not erp_service.get_system(data.source_product_id):
+            raise ValidationError(f"Unknown source product: '{data.source_product_id}'")
+        if data.target_product_id and not erp_service.get_system(data.target_product_id):
+            raise ValidationError(f"Unknown target product: '{data.target_product_id}'")
+
+        # 2. Compatibility check (action=create only)
+        if (
+            data.action == "create"
+            and data.source_product_id
+            and data.target_product_id
+            and data.source_connection_method_id
+        ):
+            is_compatible, message = erp_service.check_compatibility(
+                data.source_product_id,
+                data.target_product_id,
+                data.source_connection_method_id,
+            )
+            if not is_compatible:
+                raise ValidationError(message)
+
+        # 3. MCP config guard
+        if data.source_connection_method_id:
+            conn_method = erp_service.get_connection_method(data.source_connection_method_id)
+            if (
+                conn_method
+                and conn_method.get("requires_mcp_config")
+                and data.action == "create"
+                and not data.mcp_connection_config
+            ):
+                raise ValidationError("mcp_connection_config is required when using MCP Server connection method")
+
+        if data.org_id is None:
+            raise ValidationError("org_id is required")
+
+        # 4. Create project row
+        project = await self.project_repo.create_project(
+            org_id=data.org_id,
+            name=data.name,
+            description=data.description,
+            source_system=data.source_product_id or "",
+            target_system=data.target_product_id or "",
+            status="active" if data.action == "create" else "draft",
+            created_by=user.id,
+            updated_by=user.id,
+        )
+
+        # 5 & 6. Persist wizard-compatible ERP fields and MCP config via forward-compatible setattr
+        _erp_extra: dict = {
+            "source_vendor_id": data.source_vendor_id,
+            "source_connection_method": data.source_connection_method_id,
+            "target_vendor_id": data.target_vendor_id,
+            "target_connection_method": data.target_connection_method_id,
+        }
+        for field, value in _erp_extra.items():
+            if value is not None and hasattr(project, field):
+                setattr(project, field, value)
+
+        if data.mcp_connection_config:
+            if hasattr(project, "mcp_server_url"):
+                project.mcp_server_url = data.mcp_connection_config.server_url
+            if hasattr(project, "mcp_api_key"):
+                project.mcp_api_key = data.mcp_connection_config.api_key
+
+        # Persist wizard fields that have no column on the external ORM model
+        _wizard_row = {k: v for k, v in _erp_extra.items() if v is not None and not hasattr(project, k)}
+        if _wizard_row:
+            self.session.add(ProjectWizardFields(project_id=project.id, **_wizard_row))
+            await self.session.flush()
+
+        # 5a. Persist master data selections (bulk-add to session; committed below)
+        if data.master_data_selections:
+            for item in data.master_data_selections:
+                self.session.add(
+                    ProjectMasterDataSelection(
+                        project_id=project.id,
+                        data_type=item.data_type,
+                        selected=item.selected,
+                    )
+                )
+            await self.session.flush()
+
+        # 5b. Persist opening balance selections
+        if data.opening_balance_selections:
+            for bal_item in data.opening_balance_selections:
+                self.session.add(
+                    ProjectOpeningBalanceSelection(
+                        project_id=project.id,
+                        account_type=bal_item.account_type,
+                        include=bal_item.include,
+                    )
+                )
+            await self.session.flush()
+
+        # 7. Requester always added as admin
+        await self.access_repo.grant(
+            user_id=user.id,
+            project_id=project.id,
+            permission="admin",
+            assigned_by=user.id,
+        )
+
+        # 8. Add members (skip requester — already admin above)
+        for member in data.members:
+            if member.user_id != user.id:
+                await self.access_repo.grant(
+                    user_id=member.user_id,
+                    project_id=project.id,
+                    permission=member.permission,
+                    assigned_by=user.id,
+                )
+
+        # 9. Single commit
+        if self.session:
+            await self.session.commit()
+            await self.session.refresh(project)
+
+        logger.info("Project '%s' created (action=%s) by user %s", project.name, data.action, user.id)
+        return project
+
     async def get_project(self, project_id: UUID) -> Project:
         project = await self.project_repo.get_by_id(project_id)
         if not project:
@@ -142,7 +273,42 @@ class ProjectService:
         row = await self.project_repo.get_by_id_with_users(project_id)
         if not row:
             raise NotFoundError("Project not found")
-        return self._project_row_to_dict(row)
+        result = self._project_row_to_dict(row)
+
+        # Overlay wizard fields (vendor IDs etc.) from the extension table
+        wizard = await self.session.get(ProjectWizardFields, project_id)
+        if wizard:
+            result["source_vendor_id"] = wizard.source_vendor_id
+            result["target_vendor_id"] = wizard.target_vendor_id
+            result["source_connection_method"] = wizard.source_connection_method
+            result["target_connection_method"] = wizard.target_connection_method
+
+        # Return all master data rows so the frontend can repopulate checkboxes
+        master_res = await self.session.execute(
+            select(ProjectMasterDataSelection).where(
+                ProjectMasterDataSelection.project_id == project_id,
+            )
+        )
+        master_rows = master_res.scalars().all()
+        result["master_data_selections"] = (
+            [{"data_type": r.data_type, "selected": r.selected} for r in master_rows] if master_rows else None
+        )
+        # migration_scope kept for backward compatibility — selected items only
+        selected_items = [{"type": r.data_type, "status": "not_started"} for r in master_rows if r.selected]
+        result["migration_scope"] = selected_items if selected_items else None
+
+        # Return opening balance selections as their own field
+        balance_res = await self.session.execute(
+            select(ProjectOpeningBalanceSelection).where(
+                ProjectOpeningBalanceSelection.project_id == project_id,
+            )
+        )
+        balance_rows = balance_res.scalars().all()
+        result["opening_balance_selections"] = (
+            [{"account_type": r.account_type, "include": r.include} for r in balance_rows] if balance_rows else None
+        )
+
+        return result
 
     @staticmethod
     def _project_row_to_dict(row: Any, effective_permission: str | None = None) -> dict:
@@ -169,12 +335,16 @@ class ProjectService:
             base[field] = getattr(project, field, None)
         return base
 
-    async def update_project(self, project_id: UUID, data: ProjectUpdate, user: User | None = None) -> Project:
+    async def update_project(self, project_id: UUID, data: ProjectUpdate, user: User | None = None) -> dict:
         project = await self.get_project(project_id)
         update_data = data.model_dump(exclude_unset=True)
         allowed = {
-            "name", "description", "status", "current_step",
-            "source_system", "target_system",
+            "name",
+            "description",
+            "status",
+            "current_step",
+            "source_system",
+            "target_system",
             *_WIZARD_FIELDS,
         }
         filtered = {k: v for k, v in update_data.items() if k in allowed}
@@ -184,11 +354,94 @@ class ProjectService:
             setattr(project, key, value)
         if user:
             project.updated_by = user.id
+
+        # Fields not on the ORM model go into the wizard fields extension table
+        _external_fields = {
+            "source_vendor_id",
+            "target_vendor_id",
+            "source_connection_method",
+            "target_connection_method",
+        }
+        ext = {k: v for k, v in filtered.items() if k in _external_fields and not hasattr(project, k)}
+
         if self.session:
             await self.session.flush()
-            await self.session.refresh(project)
+            if ext:
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+                stmt = (
+                    pg_insert(ProjectWizardFields)
+                    .values(project_id=project_id, **ext)
+                    .on_conflict_do_update(index_elements=["project_id"], set_=ext)
+                )
+                await self.session.execute(stmt)
+
+            from sqlalchemy import delete
+
+            if data.master_data_selections is not None:
+                await self.session.execute(
+                    delete(ProjectMasterDataSelection).where(ProjectMasterDataSelection.project_id == project_id)
+                )
+                for item in data.master_data_selections:
+                    self.session.add(
+                        ProjectMasterDataSelection(
+                            project_id=project_id,
+                            data_type=item.data_type,
+                            selected=item.selected,
+                        )
+                    )
+
+            if data.opening_balance_selections is not None:
+                await self.session.execute(
+                    delete(ProjectOpeningBalanceSelection).where(
+                        ProjectOpeningBalanceSelection.project_id == project_id
+                    )
+                )
+                for bal in data.opening_balance_selections:
+                    self.session.add(
+                        ProjectOpeningBalanceSelection(
+                            project_id=project_id,
+                            account_type=bal.account_type,
+                            include=bal.include,
+                        )
+                    )
+
             await self.session.commit()
-        return project
+            await self.session.refresh(project)
+
+        result: dict = {
+            "id": project.id,
+            "org_id": project.org_id,
+            "name": project.name,
+            "description": project.description,
+            "source_system": project.source_system,
+            "target_system": project.target_system,
+            "status": project.status,
+            "current_step": project.current_step,
+            "created_by": project.created_by,
+            "created_by_name": None,
+            "updated_by": project.updated_by,
+            "updated_by_name": None,
+            "created_at": project.created_at,
+            "updated_at": project.updated_at,
+            "effective_permission": None,
+        }
+        for field in _WIZARD_FIELDS:
+            result[field] = getattr(project, field, None)
+        for k, v in ext.items():
+            result[k] = v
+
+        if data.master_data_selections is not None:
+            result["master_data_selections"] = [
+                {"data_type": m.data_type, "selected": m.selected} for m in data.master_data_selections
+            ]
+
+        if data.opening_balance_selections is not None:
+            result["opening_balance_selections"] = [
+                {"account_type": b.account_type, "include": b.include} for b in data.opening_balance_selections
+            ]
+
+        return result
 
     async def delete_project(self, project_id: UUID) -> None:
         project = await self.get_project(project_id)

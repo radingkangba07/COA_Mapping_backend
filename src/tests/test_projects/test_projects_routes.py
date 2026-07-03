@@ -7,9 +7,7 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_create_project_auto_admin(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_create_project_auto_admin(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json={
@@ -24,9 +22,7 @@ async def test_create_project_auto_admin(
     project_id = data["id"]
 
     # Verify auto-admin access was granted
-    access_resp = await authenticated_client.get(
-        f"/api/v1/projects/{project_id}/access"
-    )
+    access_resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/access")
     assert access_resp.status_code == 200
     access_list = access_resp.json()
     assert len(access_list) >= 1
@@ -34,9 +30,7 @@ async def test_create_project_auto_admin(
 
 
 @pytest.mark.asyncio
-async def test_create_project_default_erp(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_create_project_default_erp(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "No ERP Project", "org_id": seed_user["org_id"]},
@@ -48,9 +42,7 @@ async def test_create_project_default_erp(
 
 
 @pytest.mark.asyncio
-async def test_list_projects(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_list_projects(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "List Project", "org_id": seed_user["org_id"]},
@@ -64,9 +56,7 @@ async def test_list_projects(
 
 
 @pytest.mark.asyncio
-async def test_get_project(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_get_project(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Get Project", "org_id": seed_user["org_id"]},
@@ -78,9 +68,7 @@ async def test_get_project(
 
 
 @pytest.mark.asyncio
-async def test_update_project(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_update_project(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Update Project", "org_id": seed_user["org_id"]},
@@ -95,9 +83,7 @@ async def test_update_project(
 
 
 @pytest.mark.asyncio
-async def test_delete_project(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_delete_project(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Delete Project", "org_id": seed_user["org_id"]},
@@ -111,9 +97,7 @@ async def test_delete_project(
 # --- Access control: grant/update/revoke ---
 
 
-async def _create_verified_user(
-    test_client: AsyncClient, email: str, org_name: str = "Other Org"
-) -> str:
+async def _create_verified_user(test_client: AsyncClient, email: str, org_name: str = "Other Org") -> str:
     """Register + verify a second user; return user_id."""
     from src.core.database import get_db as _get_db
     from src.main import app
@@ -143,17 +127,13 @@ async def _add_to_org(user_id: str, org_id: str, role: str = "member") -> None:
 
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
-        await OrganizationRepository(session).create_member(
-            user_id=UUID(user_id), org_id=UUID(org_id), role=role
-        )
+        await OrganizationRepository(session).create_member(user_id=UUID(user_id), org_id=UUID(org_id), role=role)
         await session.commit()
         return
 
 
 @pytest.mark.asyncio
-async def test_grant_access_to_self_returns_409(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_grant_access_to_self_returns_409(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Self Grant Project", "org_id": seed_user["org_id"]},
@@ -167,9 +147,7 @@ async def test_grant_access_to_self_returns_409(
 
 
 @pytest.mark.asyncio
-async def test_grant_access_unknown_email_returns_404(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_grant_access_unknown_email_returns_404(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Unknown Email Project", "org_id": seed_user["org_id"]},
@@ -203,10 +181,7 @@ async def test_grant_access_happy_path(
     )
     assert resp.status_code == 200
     list_resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/access")
-    assert any(
-        a["user_id"] == other_user_id and a["permission"] == "editor"
-        for a in list_resp.json()
-    )
+    assert any(a["user_id"] == other_user_id and a["permission"] == "editor" for a in list_resp.json())
 
 
 @pytest.mark.asyncio
@@ -279,10 +254,7 @@ async def test_update_access_happy_path(
     )
     assert resp.status_code == 200
     list_resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/access")
-    assert any(
-        a["user_id"] == other_user_id and a["permission"] == "approver"
-        for a in list_resp.json()
-    )
+    assert any(a["user_id"] == other_user_id and a["permission"] == "approver" for a in list_resp.json())
 
 
 @pytest.mark.asyncio
@@ -306,9 +278,7 @@ async def test_update_access_no_existing_returns_404(
 
 
 @pytest.mark.asyncio
-async def test_update_access_self_returns_409(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_update_access_self_returns_409(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     create_resp = await authenticated_client.post(
         "/api/v1/projects",
         json={"name": "Self Update Project", "org_id": seed_user["org_id"]},

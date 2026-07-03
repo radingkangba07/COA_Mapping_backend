@@ -37,16 +37,11 @@ async def list_vendors(service: ERPConfigService = Depends(get_erp_service)):
 @router.get("/vendors/{vendor_id}/products", response_model=list[ERPSystem])
 async def list_vendor_products(vendor_id: str, service: ERPConfigService = Depends(get_erp_service)):
     try:
-        vendor = service.get_vendor(vendor_id)
-        if not vendor:
-            raise NotFoundError(f"Vendor '{vendor_id}' not found")
         products = service.get_products_for_vendor(vendor_id)
         return [
             ERPSystem(id=p["id"], name=p["name"], **{k: v for k, v in p.items() if k not in ("id", "name")})
             for p in products
         ]
-    except NotFoundError:
-        raise
     except Exception:
         logger.exception("Failed to list products for vendor '%s'", vendor_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to load vendor products"})
@@ -105,9 +100,6 @@ async def get_erp_system(erp_id: str, service: ERPConfigService = Depends(get_er
 @router.get("/{erp_id}/connection-methods", response_model=list[ConnectionMethod])
 async def get_erp_connection_methods(erp_id: str, service: ERPConfigService = Depends(get_erp_service)):
     try:
-        system = service.get_system(erp_id)
-        if not system:
-            raise NotFoundError(f"ERP system '{erp_id}' not found")
         return [ConnectionMethod(**m) for m in service.get_connection_methods_for_erp(erp_id)]
     except NotFoundError:
         raise

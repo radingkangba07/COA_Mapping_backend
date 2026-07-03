@@ -36,9 +36,13 @@ def require_project_access(min_permission: str):
         user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ) -> ProjectAccess:
-        repo = ProjectAccessRepository(db)
-        access = await repo.get_user_permission(user.id, project_id)
-        if not access or permission_level(access.permission) < permission_level(min_permission):
+        access = await ProjectAccessRepository(db).get_user_permission(user.id, project_id)
+        if not access:
+            project = await ProjectRepository(db).get_by_id(project_id)
+            if not project:
+                raise NotFoundError("Project not found")
+            raise ForbiddenError("Insufficient permissions")
+        if permission_level(access.permission) < permission_level(min_permission):
             raise ForbiddenError("Insufficient permissions")
         return access
 
