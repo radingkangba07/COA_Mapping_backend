@@ -34,6 +34,13 @@ class ValidationError(AppError):
         super().__init__(detail)
 
 
+class UnauthorizedError(AppError):
+    status_code = 401
+
+    def __init__(self, detail: str = "Unauthorized"):
+        super().__init__(detail)
+
+
 class ServiceUnavailableError(AppError):
     status_code = 503
 
