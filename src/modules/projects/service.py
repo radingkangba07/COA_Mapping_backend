@@ -208,12 +208,12 @@ class ProjectService:
 
         # 5b. Persist opening balance selections
         if data.opening_balance_selections:
-            for item in data.opening_balance_selections:
+            for bal_item in data.opening_balance_selections:
                 self.session.add(
                     ProjectOpeningBalanceSelection(
                         project_id=project.id,
-                        account_type=item.account_type,
-                        include=item.include,
+                        account_type=bal_item.account_type,
+                        include=bal_item.include,
                     )
                 )
             await self.session.flush()
