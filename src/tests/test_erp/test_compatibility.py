@@ -9,15 +9,12 @@ Covers:
 """
 
 import uuid
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.erp.models import ErpCompatibilityRule
 from src.modules.erp.service import check_compatibility_db
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,14 +46,12 @@ def _rule(
 @pytest.mark.asyncio
 async def test_no_rule_defaults_to_compatible(test_client: AsyncClient):
     """When the table has no matching rule the function must return is_compatible=True."""
-    from src.main import app
     from src.core.database import get_db as _get_db
+    from src.main import app
 
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
-        is_compatible, message = await check_compatibility_db(
-            session, "sap", "oracle_netsuite", "csv_file"
-        )
+        is_compatible, message = await check_compatibility_db(session, "sap", "oracle_netsuite", "csv_file")
         assert is_compatible is True
         assert "compatible" in message.lower()
 
@@ -64,17 +59,15 @@ async def test_no_rule_defaults_to_compatible(test_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_specific_rule_incompatible(test_client: AsyncClient):
     """A specific rule (with connection_method_id) marking incompatible must be returned."""
-    from src.main import app
     from src.core.database import get_db as _get_db
+    from src.main import app
 
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
         session.add(_rule("sap", "quickbooks", "on_premise", False, "On-premise not supported for this pair"))
         await session.flush()
 
-        is_compatible, message = await check_compatibility_db(
-            session, "sap", "quickbooks", "on_premise"
-        )
+        is_compatible, message = await check_compatibility_db(session, "sap", "quickbooks", "on_premise")
         assert is_compatible is False
         assert "on-premise" in message.lower()
 
@@ -82,17 +75,15 @@ async def test_specific_rule_incompatible(test_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_specific_rule_compatible(test_client: AsyncClient):
     """A specific rule marking compatible must return is_compatible=True."""
-    from src.main import app
     from src.core.database import get_db as _get_db
+    from src.main import app
 
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
         session.add(_rule("sap", "xero", "csv_file", True))
         await session.flush()
 
-        is_compatible, message = await check_compatibility_db(
-            session, "sap", "xero", "csv_file"
-        )
+        is_compatible, message = await check_compatibility_db(session, "sap", "xero", "csv_file")
         assert is_compatible is True
         assert "compatible" in message.lower()
 
@@ -100,17 +91,15 @@ async def test_specific_rule_compatible(test_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_general_rule_used_when_no_specific_rule(test_client: AsyncClient):
     """A general rule (connection_method_id IS NULL) must apply when no specific rule exists."""
-    from src.main import app
     from src.core.database import get_db as _get_db
+    from src.main import app
 
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
         session.add(_rule("sage", "zoho", None, False, "Sage to Zoho is not supported"))
         await session.flush()
 
-        is_compatible, message = await check_compatibility_db(
-            session, "sage", "zoho", "csv_file"
-        )
+        is_compatible, message = await check_compatibility_db(session, "sage", "zoho", "csv_file")
         assert is_compatible is False
         assert "zoho" in message.lower() or "not supported" in message.lower()
 
@@ -118,8 +107,8 @@ async def test_general_rule_used_when_no_specific_rule(test_client: AsyncClient)
 @pytest.mark.asyncio
 async def test_specific_rule_takes_precedence_over_general(test_client: AsyncClient):
     """A specific rule must override a general rule for the same source/target pair."""
-    from src.main import app
     from src.core.database import get_db as _get_db
+    from src.main import app
 
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
@@ -129,26 +118,22 @@ async def test_specific_rule_takes_precedence_over_general(test_client: AsyncCli
         session.add(_rule("odoo", "pastel", "csv_file", True))
         await session.flush()
 
-        is_compatible, message = await check_compatibility_db(
-            session, "odoo", "pastel", "csv_file"
-        )
+        is_compatible, _ = await check_compatibility_db(session, "odoo", "pastel", "csv_file")
         assert is_compatible is True
 
 
 @pytest.mark.asyncio
 async def test_incompatible_rule_without_reason_returns_fallback_message(test_client: AsyncClient):
     """An incompatible rule with no reason must return a sensible fallback message."""
-    from src.main import app
     from src.core.database import get_db as _get_db
+    from src.main import app
 
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
         session.add(_rule("microsoft_dynamics", "sap", "cloud_saas", False, None))
         await session.flush()
 
-        is_compatible, message = await check_compatibility_db(
-            session, "microsoft_dynamics", "sap", "cloud_saas"
-        )
+        is_compatible, message = await check_compatibility_db(session, "microsoft_dynamics", "sap", "cloud_saas")
         assert is_compatible is False
         assert len(message) > 0
 
@@ -179,14 +164,12 @@ async def test_compatibility_check_defaults_compatible(test_client: AsyncClient)
 @pytest.mark.asyncio
 async def test_compatibility_check_returns_incompatible_when_rule_exists(test_client: AsyncClient):
     """When a matching incompatible rule exists the endpoint must return is_compatible=false."""
-    from src.main import app
     from src.core.database import get_db as _get_db
+    from src.main import app
 
     db_override = app.dependency_overrides.get(_get_db)
     async for session in db_override():
-        session.add(
-            _rule("quickbooks", "sage", "on_premise", False, "QuickBooks does not support on-premise export")
-        )
+        session.add(_rule("quickbooks", "sage", "on_premise", False, "QuickBooks does not support on-premise export"))
         await session.commit()
 
     resp = await test_client.get(

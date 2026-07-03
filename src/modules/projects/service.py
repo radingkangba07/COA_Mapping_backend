@@ -8,7 +8,7 @@ from coa_db_models.projects.models import Project, ProjectAccess
 from sqlalchemy import select
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
-from src.modules.projects.models import (  # noqa: F401 — ensures tables are in Base.metadata
+from src.modules.projects.models import (
     ProjectMasterDataSelection,
     ProjectOpeningBalanceSelection,
     ProjectWizardFields,
@@ -154,9 +154,7 @@ class ProjectService:
                 and data.action == "create"
                 and not data.mcp_connection_config
             ):
-                raise ValidationError(
-                    "mcp_connection_config is required when using MCP Server connection method"
-                )
+                raise ValidationError("mcp_connection_config is required when using MCP Server connection method")
 
         if data.org_id is None:
             raise ValidationError("org_id is required")
@@ -198,7 +196,6 @@ class ProjectService:
 
         # 5a. Persist master data selections (bulk-add to session; committed below)
         if data.master_data_selections:
-
             for item in data.master_data_selections:
                 self.session.add(
                     ProjectMasterDataSelection(
@@ -341,8 +338,12 @@ class ProjectService:
         project = await self.get_project(project_id)
         update_data = data.model_dump(exclude_unset=True)
         allowed = {
-            "name", "description", "status", "current_step",
-            "source_system", "target_system",
+            "name",
+            "description",
+            "status",
+            "current_step",
+            "source_system",
+            "target_system",
             *_WIZARD_FIELDS,
         }
         filtered = {k: v for k, v in update_data.items() if k in allowed}
@@ -355,8 +356,10 @@ class ProjectService:
 
         # Fields not on the ORM model go into the wizard fields extension table
         _external_fields = {
-            "source_vendor_id", "target_vendor_id",
-            "source_connection_method", "target_connection_method",
+            "source_vendor_id",
+            "target_vendor_id",
+            "source_connection_method",
+            "target_connection_method",
         }
         ext = {k: v for k, v in filtered.items() if k in _external_fields and not hasattr(project, k)}
 

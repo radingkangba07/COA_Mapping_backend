@@ -62,6 +62,7 @@ async def list_vendors(service: ERPConfigService = Depends(get_erp_service)):
         logger.exception("Failed to list ERP vendors")
         return JSONResponse(status_code=500, content={"detail": "Failed to load vendors"})
 
+
 # ----vendor dab-7 first subtask -------------
 @router.get("/vendors/{vendor_id}/products", response_model=list[ERPSystem])
 async def list_vendor_products(vendor_id: str, service: ERPConfigService = Depends(get_erp_service)):
