@@ -3,7 +3,7 @@ from fastapi import Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
-from src.core.exceptions import ForbiddenError
+from src.core.exceptions import ForbiddenError, UnauthorizedError
 from src.modules.auth.email_service import EmailService
 from src.modules.auth.invitation_service import InvitationService
 from src.modules.auth.repository import (
@@ -43,9 +43,11 @@ def get_client_org_service(db: AsyncSession = Depends(get_db)) -> ClientOrgServi
 
 
 async def get_current_user(
-    authorization: str = Header(...),
+    authorization: str | None = Header(None),
     service: AuthService = Depends(get_auth_service),
 ) -> User:
+    if not authorization:
+        raise UnauthorizedError("Authorization header is required")
     if not authorization.startswith("Bearer "):
         raise ForbiddenError("Invalid authorization header")
     token = authorization.removeprefix("Bearer ")

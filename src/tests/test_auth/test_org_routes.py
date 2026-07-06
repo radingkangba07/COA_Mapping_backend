@@ -78,10 +78,10 @@ async def test_get_org_members_not_a_member(test_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_org_members_unauthenticated(test_client: AsyncClient):
-    """Returns 422 when no auth header provided."""
+    """Returns 401 when no auth header provided."""
     fake_id = str(uuid.uuid4())
     resp = await test_client.get(f"/api/v1/orgs/{fake_id}/members")
-    assert resp.status_code == 422
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -153,7 +153,7 @@ async def test_get_org_invitations_returns_empty(authenticated_client: AsyncClie
 
 @pytest.mark.asyncio
 async def test_get_org_invitations_unauthenticated(test_client: AsyncClient):
-    """Returns 422 when no auth header provided."""
+    """Returns 401 when no auth header provided."""
     fake_id = str(uuid.uuid4())
     resp = await test_client.get(f"/api/v1/orgs/{fake_id}/invitations")
-    assert resp.status_code == 422
+    assert resp.status_code == 401

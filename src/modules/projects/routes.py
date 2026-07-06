@@ -14,6 +14,7 @@ from src.modules.projects.schemas import (
     AccessResponse,
     AccessUpdate,
     ProjectCreate,
+    ProjectCreateFull,
     ProjectListResponse,
     ProjectResponse,
     ProjectUpdate,
@@ -30,13 +31,13 @@ router = APIRouter(prefix="/api/v1", tags=["projects"])
 
 @router.post("/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 async def create_project(
-    data: ProjectCreate,
+    data: ProjectCreateFull,
     background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        return await service.create_project(data, user)
+        return await service.create_project_full(data, user)
     except AppError:
         raise
     except Exception:
@@ -89,7 +90,8 @@ async def update_project(
     service: ProjectService = Depends(get_project_service),
 ):
     try:
-        return await service.update_project(project_id, data, user)
+        await service.update_project(project_id, data, user)
+        return await service.get_project_with_users(project_id)
     except AppError:
         raise
     except Exception:

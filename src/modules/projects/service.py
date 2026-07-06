@@ -4,10 +4,16 @@ from uuid import UUID
 
 from coa_db_models.auth.models import Organization, User
 from coa_db_models.mappings.models import CoaMapping
-from coa_db_models.projects.models import Project, ProjectAccess
+from coa_db_models.projects.models import (
+    Project,
+    ProjectAccess,
+    ProjectMasterDataSelection,
+    ProjectOpeningBalanceSelection,
+    ProjectWizardFields,
+)
 from sqlalchemy import select
 
-from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from src.modules.projects.protocols import (
     OrgMembershipReaderProtocol,
     ProjectAccessRepositoryProtocol,
@@ -15,6 +21,7 @@ from src.modules.projects.protocols import (
 )
 from src.modules.projects.schemas import (
     ProjectCreate,
+    ProjectCreateFull,
     ProjectUpdate,
 )
 
@@ -109,6 +116,131 @@ class ProjectService:
         logger.info("Project '%s' created by user %s", project.name, user.id)
         return project
 
+    async def create_project_full(self, data: ProjectCreateFull, user: User) -> Project:
+        """Atomic creation of a project with all wizard-form sections in one transaction."""
+        from src.modules.erp.dependencies import get_erp_service
+
+        erp_service = get_erp_service()
+
+        # 1. Validate ERP FK references against YAML catalogue
+        if data.source_vendor_id and not erp_service.get_vendor(data.source_vendor_id):
+            raise ValidationError(f"Unknown source vendor: '{data.source_vendor_id}'")
+        if data.target_vendor_id and not erp_service.get_vendor(data.target_vendor_id):
+            raise ValidationError(f"Unknown target vendor: '{data.target_vendor_id}'")
+        if data.source_product_id and not erp_service.get_system(data.source_product_id):
+            raise ValidationError(f"Unknown source product: '{data.source_product_id}'")
+        if data.target_product_id and not erp_service.get_system(data.target_product_id):
+            raise ValidationError(f"Unknown target product: '{data.target_product_id}'")
+
+        # 2. In-memory compatibility check (action=create only)
+        if (
+            data.action == "create"
+            and data.source_product_id
+            and data.target_product_id
+            and data.source_connection_method_id
+        ):
+            source = erp_service.get_system(data.source_product_id)
+            if source and data.source_connection_method_id not in source.get("connection_methods", []):
+                raise ValidationError(
+                    f"Connection method '{data.source_connection_method_id}' is not supported by '{source['name']}'"
+                )
+
+        # 3. MCP config guard — requires mcp_connection_config on action=create
+        if data.source_connection_method_id:
+            conn_method = erp_service.get_connection_method(data.source_connection_method_id)
+            if (
+                conn_method
+                and conn_method.get("requires_mcp_config")
+                and data.action == "create"
+                and not data.mcp_connection_config
+            ):
+                raise ValidationError("mcp_connection_config is required when using MCP Server connection method")
+
+        if data.org_id is None:
+            raise ValidationError("org_id is required")
+
+        # 4. Create project row
+        project = await self.project_repo.create_project(
+            org_id=data.org_id,
+            name=data.name,
+            description=data.description,
+            source_system=data.source_product_id or "",
+            target_system=data.target_product_id or "",
+            status="active" if data.action == "create" else "draft",
+            created_by=user.id,
+            updated_by=user.id,
+        )
+
+        # 5. Persist ERP vendor/connection fields via setattr (forward-compatible)
+        _erp_extra: dict = {
+            "source_vendor_id": data.source_vendor_id,
+            "source_connection_method": data.source_connection_method_id,
+            "target_vendor_id": data.target_vendor_id,
+            "target_connection_method": data.target_connection_method_id,
+        }
+        for field, value in _erp_extra.items():
+            if value is not None and hasattr(project, field):
+                setattr(project, field, value)
+
+        if data.mcp_connection_config:
+            if hasattr(project, "mcp_server_url"):
+                project.mcp_server_url = data.mcp_connection_config.server_url
+            if hasattr(project, "mcp_api_key"):
+                project.mcp_api_key = data.mcp_connection_config.api_key
+
+        # Persist wizard fields not yet on the external ORM Project model
+        _overflow = {k: v for k, v in _erp_extra.items() if v is not None and not hasattr(project, k)}
+        if _overflow:
+            self.session.add(ProjectWizardFields(project_id=project.id, **_overflow))
+            await self.session.flush()
+
+        # 6. Persist master data selections
+        for item in data.master_data_selections:
+            self.session.add(
+                ProjectMasterDataSelection(
+                    project_id=project.id,
+                    data_type=item.data_type,
+                    selected=item.selected,
+                )
+            )
+        if data.master_data_selections:
+            await self.session.flush()
+
+        # 7. Persist opening balance selections
+        for bal_item in data.opening_balance_selections:
+            self.session.add(
+                ProjectOpeningBalanceSelection(
+                    project_id=project.id,
+                    account_type=bal_item.account_type,
+                    include=bal_item.include,
+                )
+            )
+        if data.opening_balance_selections:
+            await self.session.flush()
+
+        # 8. Requester always admin
+        await self.access_repo.grant(
+            user_id=user.id,
+            project_id=project.id,
+            permission="admin",
+            assigned_by=user.id,
+        )
+
+        # 9. Add members (skip requester — already added as admin)
+        for member in data.members:
+            if member.user_id != user.id:
+                await self.access_repo.grant(
+                    user_id=member.user_id,
+                    project_id=project.id,
+                    permission=member.permission,
+                    assigned_by=user.id,
+                )
+
+        # 10. Single commit — all sections or nothing
+        await self.session.commit()
+        logger.info("Project '%s' (full wizard) created by user %s", project.name, user.id)
+        return project
+
     async def get_project(self, project_id: UUID) -> Project:
         project = await self.project_repo.get_by_id(project_id)
         if not project:
@@ -142,7 +274,34 @@ class ProjectService:
         row = await self.project_repo.get_by_id_with_users(project_id)
         if not row:
             raise NotFoundError("Project not found")
-        return self._project_row_to_dict(row)
+        result = self._project_row_to_dict(row)
+
+        # Merge wizard overflow fields (stored in ProjectWizardFields when not on Project model)
+        if self.session:
+            wizard_row = await self.session.execute(
+                select(ProjectWizardFields).where(ProjectWizardFields.project_id == project_id)
+            )
+            wizard = wizard_row.scalar_one_or_none()
+            if wizard:
+                for field in _WIZARD_FIELDS:
+                    if result.get(field) is None:
+                        result[field] = getattr(wizard, field, None)
+
+            # Load master data and opening balance selections
+            mds_rows = await self.session.execute(
+                select(ProjectMasterDataSelection).where(ProjectMasterDataSelection.project_id == project_id)
+            )
+            result["master_data_selections"] = [
+                {"data_type": m.data_type, "selected": m.selected} for m in mds_rows.scalars()
+            ]
+            obs_rows = await self.session.execute(
+                select(ProjectOpeningBalanceSelection).where(ProjectOpeningBalanceSelection.project_id == project_id)
+            )
+            result["opening_balance_selections"] = [
+                {"account_type": o.account_type, "include": o.include} for o in obs_rows.scalars()
+            ]
+
+        return result
 
     @staticmethod
     def _project_row_to_dict(row: Any, effective_permission: str | None = None) -> dict:
@@ -173,15 +332,32 @@ class ProjectService:
         project = await self.get_project(project_id)
         update_data = data.model_dump(exclude_unset=True)
         allowed = {
-            "name", "description", "status", "current_step",
-            "source_system", "target_system",
+            "name",
+            "description",
+            "status",
+            "current_step",
+            "source_system",
+            "target_system",
             *_WIZARD_FIELDS,
         }
         filtered = {k: v for k, v in update_data.items() if k in allowed}
+        overflow: dict = {}
         for key, value in filtered.items():
             if key in _WIZARD_FIELDS and not hasattr(project, key):
-                continue
-            setattr(project, key, value)
+                overflow[key] = value
+            else:
+                setattr(project, key, value)
+        if overflow and self.session:
+            wiz_row = await self.session.execute(
+                select(ProjectWizardFields).where(ProjectWizardFields.project_id == project_id)
+            )
+            wizard = wiz_row.scalar_one_or_none()
+            if wizard:
+                for k, v in overflow.items():
+                    if hasattr(wizard, k):
+                        setattr(wizard, k, v)
+            else:
+                self.session.add(ProjectWizardFields(project_id=project_id, **overflow))
         if user:
             project.updated_by = user.id
         if self.session:
