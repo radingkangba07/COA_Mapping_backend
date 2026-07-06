@@ -173,8 +173,12 @@ class ProjectService:
         project = await self.get_project(project_id)
         update_data = data.model_dump(exclude_unset=True)
         allowed = {
-            "name", "description", "status", "current_step",
-            "source_system", "target_system",
+            "name",
+            "description",
+            "status",
+            "current_step",
+            "source_system",
+            "target_system",
             *_WIZARD_FIELDS,
         }
         filtered = {k: v for k, v in update_data.items() if k in allowed}

@@ -60,6 +60,7 @@ jobs:
             echo "Deploying ref: ${BE_REF}"
             BACKEND_DIR=/opt/coa-migration/environments/staging/backend
             cd "${BACKEND_DIR}"
+            git remote set-url origin "https://${GH_PAT}@github.com/bhavna-linkedrp/COA_Mapping_backend_V0.git"
             git fetch origin
             git reset --hard "origin/${BE_REF}"
             GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" COA_DB_MODELS_BRANCH="staging" bash scripts/deploy.sh staging backend

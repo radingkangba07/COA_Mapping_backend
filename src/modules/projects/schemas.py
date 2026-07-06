@@ -103,7 +103,7 @@ class ProjectResponse(BaseModel):
 
     # Migration configuration
     migration_scope: list[MigrationScopeItem] | None = None
-    starting_balance: bool = False
+    starting_balance: bool | None = None
     source_date: date | None = None
 
     # MCP connection details (api key is intentionally excluded from responses)
