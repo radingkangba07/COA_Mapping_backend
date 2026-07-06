@@ -60,6 +60,7 @@ jobs:
           script: |
             set -euo pipefail
             echo "Deploying ref: ${BE_REF}"
+            git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
             BACKEND_DIR=/opt/coa-migration/environments/testing/backend
             cd "${BACKEND_DIR}"
             git fetch origin
