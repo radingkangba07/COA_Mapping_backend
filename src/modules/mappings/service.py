@@ -9,7 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import NotFoundError
 from src.modules.mappings.repository import MappingRepository
-from src.modules.mappings.schemas import MappingBulkSaveResponse, MappingStatsResponse, MappingUpdate, MappingUpsert
+from src.modules.mappings.schemas import (
+    ConfirmBandRequest,
+    ConfirmBandResponse,
+    MappingBulkSaveResponse,
+    MappingStatsResponse,
+    MappingUpdate,
+    MappingUpsert,
+)
 from src.modules.projects.dependencies import (
     authorize_for_resource,
     authorize_for_resources,
@@ -138,6 +145,20 @@ class MappingService:
         result = await self.mapping_repo.update_by_score_range(project_id, min_score, max_score, new_status)
         await self.session.commit()
         return {"matched": result["matched"], "modified": result["modified"], "status": new_status}
+
+    async def confirm_band(self, project_id: UUID, data: ConfirmBandRequest, user_id: UUID) -> ConfirmBandResponse:
+        all_ids = data.confirmed_suggestion_ids + data.deselected_suggestion_ids
+        if all_ids and not await self.mapping_repo.suggestions_belong_to_project(all_ids, project_id):
+            raise NotFoundError(f"One or more suggestions not found in project {project_id}")
+
+        counts = await self.mapping_repo.confirm_band_suggestions(
+            project_id=project_id,
+            confirmed_ids=data.confirmed_suggestion_ids,
+            deselected_ids=data.deselected_suggestion_ids,
+            user_id=user_id,
+        )
+        await self.session.commit()
+        return ConfirmBandResponse(project_id=project_id, level=data.level, **counts)
 
     async def get_stats(self, project_id: UUID) -> MappingStatsResponse:
         stats = await self.mapping_repo.stats_by_status(project_id)
