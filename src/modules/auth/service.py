@@ -3,8 +3,8 @@ import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import fastapi
 from coa_db_models.auth.models import User
-from fastapi import BackgroundTasks
 
 from src.core.config import get_settings
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
@@ -43,7 +43,7 @@ class AuthService:
         name: str,
         email: str,
         org_name: str,
-        background_tasks: BackgroundTasks | None = None,
+        background_tasks: fastapi.BackgroundTasks | None = None,
     ) -> dict:
         """Register a new user with an organization."""
         existing_user = await self.user_repo.get_by_email(email)
