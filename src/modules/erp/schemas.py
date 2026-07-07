@@ -27,6 +27,8 @@ class ERPVendor(BaseModel):
 class ConnectionMethod(BaseModel):
     id: str
     name: str
+    requires_mcp_config: bool = False
+    description: str | None = None
 
 
 class AccountTypesResponse(BaseModel):
