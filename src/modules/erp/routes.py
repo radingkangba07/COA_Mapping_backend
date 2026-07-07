@@ -1,25 +1,54 @@
 import io
 import logging
+import time
 
 import pandas as pd
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import NotFoundError
+from src.core.database import get_db
+from src.core.exceptions import NotFoundError, ValidationError
 from src.modules.erp.dependencies import get_erp_service
 from src.modules.erp.schemas import (
     AccountTypesResponse,
+    CompatibilityResult,
     ConnectionMethod,
     ERPSystem,
     ERPVendor,
     SampleDataResponse,
 )
-from src.modules.erp.service import ERPConfigService
+from src.modules.erp.service import ERPConfigService, check_compatibility_db
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/erp-systems", tags=["erp"])
 legacy_erp_router = APIRouter(prefix="/api/v1", tags=["erp"], include_in_schema=False)
+
+_compat_cache: dict[tuple[str, str, str], tuple[float, CompatibilityResult]] = {}
+_COMPAT_TTL = 300.0
+
+
+# ── Compatibility check (declared before /{erp_id} to avoid route shadowing) ─
+
+
+@router.get("/compatibility-check", response_model=CompatibilityResult)
+async def compatibility_check(
+    source_product_id: str,
+    target_product_id: str,
+    connection_method_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> CompatibilityResult:
+    cache_key = (source_product_id, target_product_id, connection_method_id)
+    entry = _compat_cache.get(cache_key)
+    if entry and time.monotonic() - entry[0] < _COMPAT_TTL:
+        return entry[1]
+    is_compatible, message = await check_compatibility_db(
+        db, source_product_id, target_product_id, connection_method_id
+    )
+    result = CompatibilityResult(is_compatible=is_compatible, message=message)
+    _compat_cache[cache_key] = (time.monotonic(), result)
+    return result
 
 
 # ── Vendor endpoints (must be declared before /{erp_id}) ─────────────────────
@@ -32,6 +61,20 @@ async def list_vendors(service: ERPConfigService = Depends(get_erp_service)):
     except Exception:
         logger.exception("Failed to list ERP vendors")
         return JSONResponse(status_code=500, content={"detail": "Failed to load vendors"})
+
+
+@router.get("/vendors/search", response_model=list[ERPVendor])
+async def search_vendors(
+    q: str = Query(..., min_length=2, description="Partial vendor name, minimum 2 characters"),
+    service: ERPConfigService = Depends(get_erp_service),
+):
+    try:
+        return [ERPVendor(**v) for v in service.search_vendors(q)]
+    except ValidationError:
+        raise
+    except Exception:
+        logger.exception("Failed to search vendors with query '%s'", q)
+        return JSONResponse(status_code=500, content={"detail": "Vendor search failed"})
 
 
 @router.get("/vendors/{vendor_id}/products", response_model=list[ERPSystem])
@@ -50,6 +93,22 @@ async def list_vendor_products(vendor_id: str, service: ERPConfigService = Depen
     except Exception:
         logger.exception("Failed to list products for vendor '%s'", vendor_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to load vendor products"})
+
+
+@router.get("/products", response_model=list[ERPSystem])
+async def list_products(
+    vendor_id: str | None = Query(default=None, description="Filter products by vendor ID"),
+    service: ERPConfigService = Depends(get_erp_service),
+):
+    try:
+        products = service.get_products(vendor_id=vendor_id)
+        return [
+            ERPSystem(id=p["id"], name=p["name"], **{k: v for k, v in p.items() if k not in ("id", "name")})
+            for p in products
+        ]
+    except Exception:
+        logger.exception("Failed to list products")
+        return JSONResponse(status_code=500, content={"detail": "Failed to load products"})
 
 
 # ── Connection methods (static list) ─────────────────────────────────────────
@@ -107,10 +166,8 @@ async def get_erp_connection_methods(erp_id: str, service: ERPConfigService = De
     try:
         system = service.get_system(erp_id)
         if not system:
-            raise NotFoundError(f"ERP system '{erp_id}' not found")
+            return []
         return [ConnectionMethod(**m) for m in service.get_connection_methods_for_erp(erp_id)]
-    except NotFoundError:
-        raise
     except Exception:
         logger.exception("Failed to get connection methods for '%s'", erp_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to load connection methods"})

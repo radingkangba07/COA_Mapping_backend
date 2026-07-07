@@ -2,12 +2,20 @@
 connection_methods:
   cloud_saas:
     name: Cloud (SaaS)
+    requires_mcp_config: false
+    description: Connects via the vendor's hosted cloud API
   on_premise:
     name: On-Premise (Self-Hosted)
+    requires_mcp_config: false
+    description: Direct connection to an on-premise installation
   mcp_server:
     name: MCP Server (Model Context Protocol)
+    requires_mcp_config: true
+    description: Connects through a Model Context Protocol server; requires server URL and API key
   csv_file:
     name: CSV File (upload)
+    requires_mcp_config: false
+    description: Manual export from source system; import via CSV upload
 
 # ── Vendor catalogue ──────────────────────────────────────────────────────────
 vendors:
