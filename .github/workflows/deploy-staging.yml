@@ -46,6 +46,11 @@ jobs:
           # For workflow_dispatch it falls back to `staging`.
           BE_REF: ${{ github.event.pull_request.head.ref || 'staging' }}
           GH_PAT: ${{ secrets.GH_PAT_COA_DB_MODELS }}
+          # Auto-issued, run-scoped token with read access to THIS repo
+          # (COA_Mapping_backend_V0) — used only to authenticate `git fetch`
+          # on the staging host, since that host's own stored git credential
+          # can silently expire/get revoked independently of this workflow.
+          GH_FETCH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
@@ -53,14 +58,17 @@ jobs:
           # port defaults to 22 — set secrets.STAGING_SSH_PORT and wire it
           # here if the staging host listens on a non-standard port.
           request_pty: false          # no interactive session
-          envs: BE_REF,GH_PAT
+          envs: BE_REF,GH_PAT,GH_FETCH_TOKEN
           command_timeout: 15m
           script: |
             set -euo pipefail
             echo "Deploying ref: ${BE_REF}"
             BACKEND_DIR=/opt/coa-migration/environments/staging/backend
             cd "${BACKEND_DIR}"
-            git remote set-url origin "https://${GH_PAT}@github.com/bhavna-linkedrp/COA_Mapping_backend_V0.git"
+            # Authenticate this fetch with the workflow's own token instead of
+            # relying on whatever credential is cached in this checkout's git
+            # config — that's what silently expired and broke the pipeline.
+            git remote set-url origin "https://x-access-token:${GH_FETCH_TOKEN}@github.com/bhavna-linkedrp/COA_Mapping_backend_V0.git"
             git fetch origin
             git reset --hard "origin/${BE_REF}"
             GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" COA_DB_MODELS_BRANCH="staging" bash scripts/deploy.sh staging backend
