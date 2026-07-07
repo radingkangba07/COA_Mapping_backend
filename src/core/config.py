@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=_resolve_env_file(),
         env_file_encoding="utf-8",
+        extra="ignore",
     )
 
 

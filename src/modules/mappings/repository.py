@@ -169,6 +169,126 @@ class MappingRepository(BaseRepository[CoaMapping]):
         rowcount = cast(CursorResult, result).rowcount
         return {"matched": rowcount, "modified": rowcount}
 
+    async def suggestions_belong_to_project(self, suggestion_ids: list[UUID], project_id: UUID) -> bool:
+        if not suggestion_ids:
+            return True
+        result = await self.session.execute(
+            select(func.count(CoaMappingSuggestion.id)).where(
+                CoaMappingSuggestion.id.in_(suggestion_ids),
+                CoaMappingSuggestion.project_id == project_id,
+            )
+        )
+        return result.scalar_one() == len(set(suggestion_ids))
+
+    async def confirm_band_suggestions(
+        self,
+        project_id: UUID,
+        confirmed_ids: list[UUID],
+        deselected_ids: list[UUID],
+        user_id: UUID,
+    ) -> dict:
+        """Approve confirmed suggestions and reset deselected ones back to suggested, in one transaction."""
+        confirmed = 0
+        inserted = 0
+        reset = 0
+
+        if confirmed_ids:
+            suggestions = list(
+                (
+                    await self.session.execute(
+                        select(CoaMappingSuggestion).where(
+                            CoaMappingSuggestion.id.in_(confirmed_ids),
+                            CoaMappingSuggestion.project_id == project_id,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            # Every already-linked suggestion writes the exact same values —
+            # split into "update existing" vs "insert new" up front so the
+            # existing ones can go through a single bulk UPDATE instead of one
+            # round trip per row.
+            existing_mapping_ids: list[UUID] = []
+            unlinked_suggestions: list[CoaMappingSuggestion] = []
+            for suggestion in suggestions:
+                if suggestion.coa_mapping_id is not None:
+                    existing_mapping_ids.append(suggestion.coa_mapping_id)
+                else:
+                    unlinked_suggestions.append(suggestion)
+
+            if existing_mapping_ids:
+                result = await self.session.execute(
+                    update(CoaMapping)
+                    .where(CoaMapping.id.in_(existing_mapping_ids), CoaMapping.project_id == project_id)
+                    .values(
+                        mapping_status="approved",
+                        mapping_source="user",
+                        updated_by=user_id,
+                        # Self-heals rows inserted before is_active was set
+                        # explicitly on the insert path (see below) — those
+                        # rows would otherwise stay hidden forever, since
+                        # this is the only other place they get touched.
+                        is_active=True,
+                    )
+                )
+                confirmed += cast(CursorResult, result).rowcount
+
+            pending_links: list[tuple[CoaMapping, UUID]] = []
+            for suggestion in unlinked_suggestions:
+                insert_data = self._merge_from_suggestion({}, suggestion)
+                insert_data["mapping_status"] = "approved"
+                insert_data["mapping_source"] = "user"
+                insert_data["updated_by"] = user_id
+                insert_data["created_by"] = user_id
+                # Must be explicit — relying on the column's server_default
+                # leaves is_active unset on the in-memory object, and both
+                # list_by_project and the suggestions outer-join filter on
+                # is_active.is_(True), silently hiding the row otherwise.
+                insert_data["is_active"] = True
+                new_mapping = CoaMapping(project_id=project_id, **insert_data)
+                self.session.add(new_mapping)
+                pending_links.append((new_mapping, suggestion.id))
+                inserted += 1
+                confirmed += 1
+
+            if pending_links:
+                await self.session.flush()  # assign PKs so we can link suggestions
+                for mapping, suggestion_id in pending_links:
+                    await self.session.execute(
+                        update(CoaMappingSuggestion)
+                        .where(
+                            CoaMappingSuggestion.id == suggestion_id,
+                            CoaMappingSuggestion.project_id == project_id,
+                        )
+                        .values(coa_mapping_id=mapping.id)
+                    )
+
+        if deselected_ids:
+            deselected_mapping_ids = (
+                (
+                    await self.session.execute(
+                        select(CoaMappingSuggestion.coa_mapping_id).where(
+                            CoaMappingSuggestion.id.in_(deselected_ids),
+                            CoaMappingSuggestion.project_id == project_id,
+                            CoaMappingSuggestion.coa_mapping_id.is_not(None),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if deselected_mapping_ids:
+                result = await self.session.execute(
+                    update(CoaMapping)
+                    .where(CoaMapping.id.in_(deselected_mapping_ids), CoaMapping.project_id == project_id)
+                    .values(mapping_status="suggested", updated_by=user_id)
+                )
+                reset = cast(CursorResult, result).rowcount
+
+        await self.session.flush()
+        return {"confirmed": confirmed, "reset": reset, "inserted": inserted}
+
     async def count_by_project(self, project_id: UUID) -> int:
         result = await self.session.execute(
             select(func.count(CoaMapping.id)).where(CoaMapping.project_id == project_id)
