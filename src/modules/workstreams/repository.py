@@ -1,0 +1,134 @@
+from typing import Any
+from uuid import UUID
+
+from coa_db_models.workstreams.models import Workstream, WorkstreamCategory, WorkstreamStage, WorkstreamStatusLog
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.core.base_repository import BaseRepository
+
+# Default stages seeded on every new workstream, in sequence order.
+DEFAULT_STAGES: list[tuple[str, int]] = [
+    ("ERP Select", 1),
+    ("Field Mapping", 2),
+    ("Validation", 3),
+    ("Migration", 4),
+]
+
+
+class WorkstreamCategoryRepository(BaseRepository[WorkstreamCategory]):
+    model = WorkstreamCategory
+
+    async def list_ordered(self) -> list[WorkstreamCategory]:
+        result = await self.session.execute(
+            select(WorkstreamCategory).order_by(WorkstreamCategory.display_order)
+        )
+        return list(result.scalars().all())
+
+
+class WorkstreamRepository(BaseRepository[Workstream]):
+    model = Workstream
+
+    async def list_by_project(self, project_id: UUID) -> list[Any]:
+        """Return rows of (Workstream, category_name) ordered by category display_order then display_code."""
+        result = await self.session.execute(
+            select(Workstream, WorkstreamCategory.name.label("category_name"))
+            .join(WorkstreamCategory, Workstream.category_id == WorkstreamCategory.id)
+            .where(Workstream.project_id == project_id)
+            .order_by(WorkstreamCategory.display_order, Workstream.display_code)
+        )
+        return list(result.all())
+
+    async def get_with_category_name(self, workstream_id: UUID) -> Any | None:
+        result = await self.session.execute(
+            select(Workstream, WorkstreamCategory.name.label("category_name"))
+            .join(WorkstreamCategory, Workstream.category_id == WorkstreamCategory.id)
+            .where(Workstream.id == workstream_id)
+        )
+        return result.one_or_none()
+
+    async def next_display_seq(self, project_id: UUID, category_id: UUID) -> int:
+        """Return the next sequence number for display_code generation.
+
+        Locks matching rows FOR UPDATE so concurrent inserts on the same
+        project+category cannot claim the same sequence number.
+        """
+        result = await self.session.execute(
+            select(Workstream.display_code)
+            .where(Workstream.project_id == project_id, Workstream.category_id == category_id)
+            .with_for_update()
+        )
+        codes = [row[0] for row in result.all()]
+        if not codes:
+            return 1
+        return max(int(code.split("-")[1]) for code in codes) + 1
+
+    async def has_stages(self, workstream_id: UUID) -> bool:
+        result = await self.session.execute(
+            select(func.count()).select_from(WorkstreamStage).where(WorkstreamStage.workstream_id == workstream_id)
+        )
+        return (result.scalar() or 0) > 0
+
+    async def has_status_logs(self, workstream_id: UUID) -> bool:
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(WorkstreamStatusLog)
+            .where(WorkstreamStatusLog.workstream_id == workstream_id)
+        )
+        return (result.scalar() or 0) > 0
+
+    async def create_with_stages(
+        self,
+        project_id: UUID,
+        category_id: UUID,
+        name: str,
+        display_code: str,
+        created_by: UUID,
+    ) -> Workstream:
+        workstream = Workstream(
+            project_id=project_id,
+            category_id=category_id,
+            name=name,
+            display_code=display_code,
+            status="not_started",
+            current_stage=DEFAULT_STAGES[0][0],
+            created_by=created_by,
+        )
+        self.session.add(workstream)
+        await self.session.flush()
+        await self.session.refresh(workstream)
+
+        for stage_name, seq in DEFAULT_STAGES:
+            self.session.add(
+                WorkstreamStage(
+                    workstream_id=workstream.id,
+                    name=stage_name,
+                    sequence=seq,
+                    is_completed=False,
+                )
+            )
+        await self.session.flush()
+
+        return workstream
+
+
+class StageRepository(BaseRepository[WorkstreamStage]):
+    model = WorkstreamStage
+
+    async def list_by_workstream(self, workstream_id: UUID) -> list[WorkstreamStage]:
+        result = await self.session.execute(
+            select(WorkstreamStage)
+            .where(WorkstreamStage.workstream_id == workstream_id)
+            .order_by(WorkstreamStage.sequence)
+        )
+        return list(result.scalars().all())
+
+
+def make_repositories(
+    session: AsyncSession,
+) -> tuple[WorkstreamCategoryRepository, WorkstreamRepository, StageRepository]:
+    return (
+        WorkstreamCategoryRepository(session),
+        WorkstreamRepository(session),
+        StageRepository(session),
+    )
