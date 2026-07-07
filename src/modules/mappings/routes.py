@@ -15,6 +15,8 @@ from src.modules.jobs.service import JobService
 from src.modules.mappings.dependencies import get_mapping_service, get_matching_engine
 from src.modules.mappings.matching import MatchingEngine
 from src.modules.mappings.schemas import (
+    ConfirmBandRequest,
+    ConfirmBandResponse,
     FuzzyMatchRequest,
     FuzzyMatchResponse,
     HierarchicalMappingRequest,
@@ -172,6 +174,23 @@ async def delete_mapping(
     except Exception:
         logger.exception("Failed to delete mapping %s", mapping_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to delete mapping"})
+
+
+@router.post("/project/{project_id}/confirm-band", response_model=ConfirmBandResponse)
+async def confirm_band(
+    project_id: UUID,
+    data: ConfirmBandRequest,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("editor")),
+    service: MappingService = Depends(get_mapping_service),
+):
+    try:
+        return await service.confirm_band(project_id, data, user.id)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to confirm band for project %s", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to confirm band"})
 
 
 @router.get("/project/{project_id}/stats", response_model=MappingStatsResponse)

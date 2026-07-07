@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -106,3 +107,17 @@ class FuzzyMatchRequest(BaseModel):
 class FuzzyMatchResponse(BaseModel):
     mappings: list = []
     target_fields: list = []
+
+
+class ConfirmBandRequest(BaseModel):
+    level: Literal["high", "medium", "low"]
+    confirmed_suggestion_ids: list[uuid.UUID] = []
+    deselected_suggestion_ids: list[uuid.UUID] = []
+
+
+class ConfirmBandResponse(BaseModel):
+    project_id: uuid.UUID
+    level: str
+    confirmed: int = 0
+    reset: int = 0
+    inserted: int = 0
