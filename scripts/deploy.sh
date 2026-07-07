@@ -88,11 +88,8 @@ dc() {
 deploy_backend() {
     echo "[${ENV}/Backend] Pulling latest from ${BE_REF}..."
     cd ${ENV_DIR}/backend
-    git fetch origin
-    git reset --hard origin/${BE_REF}
-    cd ${ENV_DIR}
 
-    # Read GitHub token for private git dependencies.
+    # Resolve GitHub token before git fetch so private repo access works.
     # Token file is maintained on the host at: <env_dir>/.gh_pat
     if [[ -z "${GITHUB_TOKEN:-}" ]]; then
         GH_PAT_FILE="${ENV_DIR}/.gh_pat"
@@ -106,6 +103,15 @@ deploy_backend() {
     else
         echo "[${ENV}/Backend] Using GITHUB_TOKEN from environment (${#GITHUB_TOKEN} chars)"
     fi
+
+    # Configure git to use the token for all github.com HTTPS operations.
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+    fi
+
+    git fetch origin
+    git reset --hard origin/${BE_REF}
+    cd ${ENV_DIR}
 
     echo "[${ENV}/Backend] Rebuilding api-service..."
     dc build --no-cache \
