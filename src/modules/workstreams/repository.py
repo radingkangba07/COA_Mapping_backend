@@ -20,9 +20,7 @@ class WorkstreamCategoryRepository(BaseRepository[WorkstreamCategory]):
     model = WorkstreamCategory
 
     async def list_ordered(self) -> list[WorkstreamCategory]:
-        result = await self.session.execute(
-            select(WorkstreamCategory).order_by(WorkstreamCategory.display_order)
-        )
+        result = await self.session.execute(select(WorkstreamCategory).order_by(WorkstreamCategory.display_order))
         return list(result.scalars().all())
 
 

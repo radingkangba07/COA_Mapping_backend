@@ -27,6 +27,7 @@ def require_workstream_project_access(min_permission: str):
 
     Works for routes where project_id is directly in the path.
     """
+
     async def _check(
         project_id: UUID = Path(...),
         user: User = Depends(get_current_user),

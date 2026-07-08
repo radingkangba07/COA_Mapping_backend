@@ -33,9 +33,7 @@ class WorkstreamService:
         self.workstream_repo = workstream_repo
         self.session = session
 
-    async def create(
-        self, project_id: UUID, data: WorkstreamCreate, user: User
-    ) -> WorkstreamResponse:
+    async def create(self, project_id: UUID, data: WorkstreamCreate, user: User) -> WorkstreamResponse:
         category = await self.category_repo.get_by_id(data.category_id)
         if category is None:
             raise NotFoundError(f"WorkstreamCategory {data.category_id} not found")
@@ -79,13 +77,9 @@ class WorkstreamService:
             raise NotFoundError(f"Workstream {workstream_id} not found")
 
         if await self.workstream_repo.has_stages(workstream_id):
-            raise ConflictError(
-                "Cannot delete workstream with existing stages. Remove stages first."
-            )
+            raise ConflictError("Cannot delete workstream with existing stages. Remove stages first.")
         if await self.workstream_repo.has_status_logs(workstream_id):
-            raise ConflictError(
-                "Cannot delete workstream with existing status log entries."
-            )
+            raise ConflictError("Cannot delete workstream with existing status log entries.")
 
         await self.session.delete(workstream)
         await self.session.commit()
