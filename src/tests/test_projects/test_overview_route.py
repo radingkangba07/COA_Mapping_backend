@@ -45,16 +45,16 @@ async def test_overview_no_workstreams(authenticated_client: AsyncClient, seed_u
     project = await _create_project(
         authenticated_client,
         seed_user,
-        source_system="SAP",
-        target_system="Odoo",
+        source_product_id="sap",
+        target_product_id="odoo",
     )
     resp = await authenticated_client.get(f"/api/v1/projects/{project['id']}/overview")
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == project["id"]
     assert data["name"] == "Overview Project"
-    assert data["source_erp"] == "SAP"
-    assert data["target_erp"] == "Odoo"
+    assert data["source_erp"] == "sap"
+    assert data["target_erp"] == "odoo"
     assert data["source_deployment"] is None
     assert data["target_deployment"] is None
     assert data["groups"] == []
