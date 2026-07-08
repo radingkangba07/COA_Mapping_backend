@@ -27,6 +27,7 @@ from src.modules.projects.routes import router as projects_router
 from src.modules.storage.routes import files_router
 from src.modules.storage.routes import router as storage_router
 from src.modules.websocket.routes import router as websocket_router
+from src.modules.workstreams.routes import router as workstreams_router
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(orgs_router)
 app.include_router(projects_router)
+app.include_router(workstreams_router)
 app.include_router(mappings_router)
 app.include_router(account_types_router)
 app.include_router(suggestions_router)
