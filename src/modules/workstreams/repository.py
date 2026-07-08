@@ -122,6 +122,22 @@ class StageRepository(BaseRepository[WorkstreamStage]):
         return list(result.scalars().all())
 
 
+class StatusLogRepository(BaseRepository[WorkstreamStatusLog]):
+    model = WorkstreamStatusLog
+
+    async def list_by_workstream(self, workstream_id: UUID) -> list[Any]:
+        """Return (WorkstreamStatusLog, changed_by_name) tuples ordered newest-first."""
+        from coa_db_models.auth.models import User
+
+        result = await self.session.execute(
+            select(WorkstreamStatusLog, User.name.label("changed_by_name"))
+            .outerjoin(User, WorkstreamStatusLog.actor_id == User.id)
+            .where(WorkstreamStatusLog.workstream_id == workstream_id)
+            .order_by(WorkstreamStatusLog.created_at.desc())
+        )
+        return list(result.all())
+
+
 def make_repositories(
     session: AsyncSession,
 ) -> tuple[WorkstreamCategoryRepository, WorkstreamRepository, StageRepository]:
