@@ -1,11 +1,18 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from coa_db_models.auth.models import User
 from coa_db_models.workstreams.models import Workstream
 
-from src.core.exceptions import ConflictError, NotFoundError
-from src.modules.workstreams.repository import WorkstreamCategoryRepository, WorkstreamRepository
-from src.modules.workstreams.schemas import WorkstreamCreate, WorkstreamResponse, WorkstreamUpdate
+from src.core.exceptions import ConflictError, NotFoundError, ValidationError
+from src.modules.workstreams.repository import StageRepository, WorkstreamCategoryRepository, WorkstreamRepository
+from src.modules.workstreams.schemas import (
+    StageCompleteResponse,
+    StageResponse,
+    WorkstreamCreate,
+    WorkstreamResponse,
+    WorkstreamUpdate,
+)
 
 
 def _to_response(workstream: Workstream, category_name: str) -> WorkstreamResponse:
@@ -83,3 +90,69 @@ class WorkstreamService:
 
         await self.session.delete(workstream)
         await self.session.commit()
+
+
+class StageService:
+    def __init__(self, workstream_repo: WorkstreamRepository, stage_repo: StageRepository, session):
+        self.workstream_repo = workstream_repo
+        self.stage_repo = stage_repo
+        self.session = session
+
+    async def list_stages(self, workstream_id: UUID) -> list[StageResponse]:
+        workstream = await self.workstream_repo.get_by_id(workstream_id)
+        if workstream is None:
+            raise NotFoundError(f"Workstream {workstream_id} not found")
+        stages = await self.stage_repo.list_by_workstream(workstream_id)
+        return [StageResponse.model_validate(s) for s in stages]
+
+    async def complete_stage(self, workstream_id: UUID, stage_id: UUID, user: User) -> StageCompleteResponse:
+        workstream = await self.workstream_repo.get_by_id(workstream_id)
+        if workstream is None:
+            raise NotFoundError(f"Workstream {workstream_id} not found")
+
+        stage = await self.stage_repo.get_by_id(stage_id)
+        if stage is None or stage.workstream_id != workstream_id:
+            raise NotFoundError(f"Stage {stage_id} not found on workstream {workstream_id}")
+
+        # Idempotent — already complete is fine
+        if stage.is_completed:
+            return StageCompleteResponse(
+                id=stage.id,
+                is_completed=True,
+                completed_at=stage.completed_at,
+                completed_by=stage.completed_by,
+            )
+
+        # Enforce sequential completion
+        if stage.sequence > 1:
+            all_stages = await self.stage_repo.list_by_workstream(workstream_id)
+            prior_incomplete = [s for s in all_stages if s.sequence < stage.sequence and not s.is_completed]
+            if prior_incomplete:
+                raise ValidationError("Previous stage not yet completed")
+
+        now = datetime.now(UTC)
+        stage.is_completed = True
+        stage.completed_at = now
+        stage.completed_by = user.id
+
+        # Update workstream.current_stage to the next incomplete stage name.
+        # current_stage is NOT NULL in the DB — when all stages are done we
+        # keep the last stage's name; the overview layer derives null from that.
+        all_stages = await self.stage_repo.list_by_workstream(workstream_id)
+        next_stage = next(
+            (s for s in all_stages if not s.is_completed and s.id != stage.id),
+            None,
+        )
+        if next_stage is not None:
+            workstream.current_stage = next_stage.name
+
+        await self.session.flush()
+        await self.session.commit()
+        await self.session.refresh(stage)
+
+        return StageCompleteResponse(
+            id=stage.id,
+            is_completed=True,
+            completed_at=stage.completed_at,
+            completed_by=stage.completed_by,
+        )

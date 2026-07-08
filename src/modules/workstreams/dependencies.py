@@ -10,7 +10,12 @@ from src.modules.auth.dependencies import get_current_user
 from src.modules.projects.repository import ProjectAccessRepository
 from src.modules.projects.service import permission_level
 from src.modules.workstreams.repository import WorkstreamRepository, make_repositories
-from src.modules.workstreams.service import WorkstreamService
+from src.modules.workstreams.service import StageService, WorkstreamService
+
+
+def get_stage_service(db: AsyncSession = Depends(get_db)) -> StageService:
+    _, workstream_repo, stage_repo = make_repositories(db)
+    return StageService(workstream_repo=workstream_repo, stage_repo=stage_repo, session=db)
 
 
 def get_workstream_service(db: AsyncSession = Depends(get_db)) -> WorkstreamService:

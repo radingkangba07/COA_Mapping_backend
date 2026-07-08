@@ -30,3 +30,27 @@ class WorkstreamResponse(BaseModel):
 class WorkstreamListResponse(BaseModel):
     workstreams: list[WorkstreamResponse]
     total: int
+
+
+# ── Stage schemas (DAB-20) ────────────────────────────────────────────────────
+
+
+class StageResponse(BaseModel):
+    id: uuid.UUID
+    workstream_id: uuid.UUID
+    name: str
+    sequence: int
+    is_completed: bool
+    completed_at: datetime | None
+    completed_by: uuid.UUID | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StageCompleteResponse(BaseModel):
+    id: uuid.UUID
+    is_completed: bool
+    completed_at: datetime
+    completed_by: uuid.UUID
+
+    model_config = ConfigDict(from_attributes=True)
