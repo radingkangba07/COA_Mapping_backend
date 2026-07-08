@@ -31,6 +31,11 @@ class ConnectionMethod(BaseModel):
     description: str | None = None
 
 
+class CompatibilityResult(BaseModel):
+    is_compatible: bool
+    message: str
+
+
 class AccountTypesResponse(BaseModel):
     erp_id: str
     account_types: list[str]
