@@ -54,3 +54,22 @@ class StageCompleteResponse(BaseModel):
     completed_by: uuid.UUID
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── Status schemas (DAB-21) ───────────────────────────────────────────────────
+
+
+class StatusTransitionRequest(BaseModel):
+    new_status: str
+    note: str | None = None
+
+
+class StatusLogEntry(BaseModel):
+    id: uuid.UUID
+    workstream_id: uuid.UUID
+    previous_status: str
+    new_status: str
+    note: str | None
+    changed_by: uuid.UUID | None
+    changed_by_name: str | None
+    created_at: datetime

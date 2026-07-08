@@ -11,6 +11,7 @@ from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
 from src.modules.workstreams.dependencies import (
     get_stage_service,
+    get_status_service,
     get_workstream_service,
     require_workstream_project_access,
     resolve_workstream_project_access,
@@ -18,12 +19,14 @@ from src.modules.workstreams.dependencies import (
 from src.modules.workstreams.schemas import (
     StageCompleteResponse,
     StageResponse,
+    StatusLogEntry,
+    StatusTransitionRequest,
     WorkstreamCreate,
     WorkstreamListResponse,
     WorkstreamResponse,
     WorkstreamUpdate,
 )
-from src.modules.workstreams.service import StageService, WorkstreamService
+from src.modules.workstreams.service import StageService, StatusService, WorkstreamService
 
 logger = logging.getLogger(__name__)
 
@@ -151,3 +154,48 @@ async def complete_stage(
     except Exception:
         logger.exception("Failed to complete stage %s on workstream %s", stage_id, workstream_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to complete stage"})
+
+
+# ── Status endpoints (DAB-21) ─────────────────────────────────────────────────
+
+
+@router.post(
+    "/workstreams/{workstream_id}/status",
+    response_model=StatusLogEntry,
+    status_code=status.HTTP_201_CREATED,
+)
+async def transition_status(
+    workstream_id: UUID,
+    data: StatusTransitionRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    service: StatusService = Depends(get_status_service),
+):
+    try:
+        await resolve_workstream_project_access(workstream_id, user, db, "editor")
+        return await service.transition(workstream_id, data, user)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to transition status for workstream %s", workstream_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to transition status"})
+
+
+@router.get(
+    "/workstreams/{workstream_id}/status-log",
+    response_model=list[StatusLogEntry],
+)
+async def list_status_log(
+    workstream_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    service: StatusService = Depends(get_status_service),
+):
+    try:
+        await resolve_workstream_project_access(workstream_id, user, db, "viewer")
+        return await service.list_log(workstream_id)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to list status log for workstream %s", workstream_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to list status log"})

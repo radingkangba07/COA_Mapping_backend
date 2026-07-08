@@ -9,13 +9,23 @@ from src.core.exceptions import ForbiddenError, NotFoundError
 from src.modules.auth.dependencies import get_current_user
 from src.modules.projects.repository import ProjectAccessRepository
 from src.modules.projects.service import permission_level
-from src.modules.workstreams.repository import WorkstreamRepository, make_repositories
-from src.modules.workstreams.service import StageService, WorkstreamService
+from src.modules.workstreams.repository import StatusLogRepository, WorkstreamRepository, make_repositories
+from src.modules.workstreams.service import StageService, StatusService, WorkstreamService
 
 
 def get_stage_service(db: AsyncSession = Depends(get_db)) -> StageService:
     _, workstream_repo, stage_repo = make_repositories(db)
     return StageService(workstream_repo=workstream_repo, stage_repo=stage_repo, session=db)
+
+
+def get_status_service(db: AsyncSession = Depends(get_db)) -> StatusService:
+    _, workstream_repo, stage_repo = make_repositories(db)
+    return StatusService(
+        workstream_repo=workstream_repo,
+        stage_repo=stage_repo,
+        status_log_repo=StatusLogRepository(db),
+        session=db,
+    )
 
 
 def get_workstream_service(db: AsyncSession = Depends(get_db)) -> WorkstreamService:
@@ -32,6 +42,7 @@ def require_workstream_project_access(min_permission: str):
 
     Works for routes where project_id is directly in the path.
     """
+
     async def _check(
         project_id: UUID = Path(...),
         user: User = Depends(get_current_user),
