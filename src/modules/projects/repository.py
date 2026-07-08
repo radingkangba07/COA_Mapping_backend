@@ -3,7 +3,8 @@ from uuid import UUID
 
 from coa_db_models.auth.models import User
 from coa_db_models.projects.models import Project, ProjectAccess
-from sqlalchemy import delete, select
+from coa_db_models.workstreams.models import Workstream, WorkstreamCategory, WorkstreamStage
+from sqlalchemy import case, delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql import func
@@ -70,6 +71,37 @@ class ProjectRepository(BaseRepository[Project]):
             project.status = status
             project.updated_at = func.now()
             await self.session.flush()
+
+    async def get_overview_workstreams(self, project_id: UUID) -> list[Any]:
+        """Return rows of (Workstream, category_slug, category_name, category_display_order)
+        ordered by category display_order then workstream display_code."""
+        result = await self.session.execute(
+            select(
+                Workstream,
+                WorkstreamCategory.slug.label("category_slug"),
+                WorkstreamCategory.name.label("category_name"),
+                WorkstreamCategory.display_order.label("category_display_order"),
+            )
+            .join(WorkstreamCategory, Workstream.category_id == WorkstreamCategory.id)
+            .where(Workstream.project_id == project_id)
+            .order_by(WorkstreamCategory.display_order, Workstream.display_code)
+        )
+        return list(result.all())
+
+    async def get_stage_counts(self, workstream_ids: list[UUID]) -> dict[UUID, tuple[int, int]]:
+        """Return {workstream_id: (total_stages, completed_stages)} for the given IDs."""
+        if not workstream_ids:
+            return {}
+        result = await self.session.execute(
+            select(
+                WorkstreamStage.workstream_id,
+                func.count().label("total"),
+                func.sum(case((WorkstreamStage.is_completed, 1), else_=0)).label("completed"),
+            )
+            .where(WorkstreamStage.workstream_id.in_(workstream_ids))
+            .group_by(WorkstreamStage.workstream_id)
+        )
+        return {row.workstream_id: (int(row.total), int(row.completed)) for row in result.all()}
 
 
 class ProjectAccessRepository:

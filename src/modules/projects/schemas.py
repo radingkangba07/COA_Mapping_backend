@@ -128,6 +128,38 @@ class ProjectListResponse(BaseModel):
     total: int
 
 
+# ── Project Overview schemas (DAB-18) ─────────────────────────────────────────
+
+
+class ProjectOverviewWorkstreamItem(BaseModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    status: str
+    progress: int
+    current_stage: str | None
+    included: bool
+
+
+class ProjectOverviewGroupItem(BaseModel):
+    key: str
+    title: str
+    workstreams: list[ProjectOverviewWorkstreamItem]
+
+
+class ProjectOverviewResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    project_code: str | None
+    status: str
+    source_erp: str
+    target_erp: str
+    source_deployment: str | None
+    target_deployment: str | None
+    last_edited_at: datetime
+    groups: list[ProjectOverviewGroupItem]
+
+
 class AccessGrant(BaseModel):
     email: str
     permission: str = "viewer"
