@@ -16,6 +16,7 @@ from src.modules.projects.schemas import (
     ProjectCreate,
     ProjectCreateFull,
     ProjectListResponse,
+    ProjectOverviewResponse,
     ProjectResponse,
     ProjectUpdate,
 )
@@ -79,6 +80,21 @@ async def get_project(
     except Exception:
         logger.exception("Failed to get project %s", project_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to get project"})
+
+
+@router.get("/projects/{project_id}/overview", response_model=ProjectOverviewResponse)
+async def get_project_overview(
+    project_id: UUID,
+    _access=Depends(require_project_access("viewer")),
+    service: ProjectService = Depends(get_project_service),
+):
+    try:
+        return await service.get_project_overview(project_id)
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to get project overview %s", project_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to get project overview"})
 
 
 @router.patch("/projects/{project_id}", response_model=ProjectResponse)
