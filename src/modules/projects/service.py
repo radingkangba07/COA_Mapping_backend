@@ -15,6 +15,9 @@ from src.modules.projects.protocols import (
 )
 from src.modules.projects.schemas import (
     ProjectCreate,
+    ProjectOverviewGroupItem,
+    ProjectOverviewResponse,
+    ProjectOverviewWorkstreamItem,
     ProjectUpdate,
 )
 
@@ -277,6 +280,57 @@ class ProjectService:
         if not access or permission_level(access.permission) < permission_level(min_permission):
             raise ForbiddenError("Insufficient permissions")
         return access
+
+    async def get_project_overview(self, project_id: UUID) -> ProjectOverviewResponse:
+        project = await self.project_repo.get_by_id(project_id)
+        if project is None:
+            raise NotFoundError("Project not found")
+
+        ws_rows = await self.project_repo.get_overview_workstreams(project_id)
+
+        workstream_ids = [row.Workstream.id for row in ws_rows]
+        stage_counts = await self.project_repo.get_stage_counts(workstream_ids)
+
+        groups_map: dict[str, dict] = {}
+        groups_order: list[str] = []
+
+        for row in ws_rows:
+            ws = row.Workstream
+            slug: str = row.category_slug
+
+            if slug not in groups_map:
+                groups_map[slug] = {"key": slug, "title": row.category_name, "workstreams": []}
+                groups_order.append(slug)
+
+            total, completed = stage_counts.get(ws.id, (0, 0))
+            progress = round((completed / total) * 100) if total > 0 else 0
+
+            groups_map[slug]["workstreams"].append(
+                ProjectOverviewWorkstreamItem(
+                    id=ws.id,
+                    code=ws.display_code,
+                    name=ws.name,
+                    status=ws.status,
+                    progress=progress,
+                    current_stage=ws.current_stage,
+                    included=True,
+                )
+            )
+
+        groups = [ProjectOverviewGroupItem(**groups_map[k]) for k in groups_order]
+
+        return ProjectOverviewResponse(
+            id=project.id,
+            name=project.name,
+            project_code=project.display_code,
+            status=project.status,
+            source_erp=project.source_system,
+            target_erp=project.target_system,
+            source_deployment=None,
+            target_deployment=None,
+            last_edited_at=project.updated_at,
+            groups=groups,
+        )
 
     async def get_project_detail(self, project_id: UUID, user: User) -> dict:
         row = await self.project_repo.get_by_id_with_users(project_id)
