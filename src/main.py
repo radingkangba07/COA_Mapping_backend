@@ -25,9 +25,9 @@ from src.modules.mappings.routes import router as mappings_router
 from src.modules.mappings.suggestions.routes import router as suggestions_router
 from src.modules.projects.routes import router as projects_router
 from src.modules.storage.routes import files_router
-from src.modules.workstreams.routes import router as workstreams_router
 from src.modules.storage.routes import router as storage_router
 from src.modules.websocket.routes import router as websocket_router
+from src.modules.workstreams.routes import router as workstreams_router
 
 logger = logging.getLogger(__name__)
 

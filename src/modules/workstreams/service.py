@@ -40,9 +40,7 @@ class WorkstreamService:
         self.workstream_repo = workstream_repo
         self.session = session
 
-    async def create(
-        self, project_id: UUID, data: WorkstreamCreate, user: User
-    ) -> WorkstreamResponse:
+    async def create(self, project_id: UUID, data: WorkstreamCreate, user: User) -> WorkstreamResponse:
         category = await self.category_repo.get_by_id(data.category_id)
         if category is None:
             raise NotFoundError(f"WorkstreamCategory {data.category_id} not found")
@@ -86,13 +84,9 @@ class WorkstreamService:
             raise NotFoundError(f"Workstream {workstream_id} not found")
 
         if await self.workstream_repo.has_stages(workstream_id):
-            raise ConflictError(
-                "Cannot delete workstream with existing stages. Remove stages first."
-            )
+            raise ConflictError("Cannot delete workstream with existing stages. Remove stages first.")
         if await self.workstream_repo.has_status_logs(workstream_id):
-            raise ConflictError(
-                "Cannot delete workstream with existing status log entries."
-            )
+            raise ConflictError("Cannot delete workstream with existing status log entries.")
 
         await self.session.delete(workstream)
         await self.session.commit()
@@ -111,9 +105,7 @@ class StageService:
         stages = await self.stage_repo.list_by_workstream(workstream_id)
         return [StageResponse.model_validate(s) for s in stages]
 
-    async def complete_stage(
-        self, workstream_id: UUID, stage_id: UUID, user: User
-    ) -> StageCompleteResponse:
+    async def complete_stage(self, workstream_id: UUID, stage_id: UUID, user: User) -> StageCompleteResponse:
         workstream = await self.workstream_repo.get_by_id(workstream_id)
         if workstream is None:
             raise NotFoundError(f"Workstream {workstream_id} not found")
@@ -134,10 +126,7 @@ class StageService:
         # Enforce sequential completion
         if stage.sequence > 1:
             all_stages = await self.stage_repo.list_by_workstream(workstream_id)
-            prior_incomplete = [
-                s for s in all_stages
-                if s.sequence < stage.sequence and not s.is_completed
-            ]
+            prior_incomplete = [s for s in all_stages if s.sequence < stage.sequence and not s.is_completed]
             if prior_incomplete:
                 raise ValidationError("Previous stage not yet completed")
 

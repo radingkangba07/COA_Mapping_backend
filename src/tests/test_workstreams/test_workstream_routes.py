@@ -28,9 +28,7 @@ async def _get_category_id(client: AsyncClient, slug: str) -> str:
         from coa_db_models.workstreams.models import WorkstreamCategory
         from sqlalchemy import select
 
-        result = await session.execute(
-            select(WorkstreamCategory).where(WorkstreamCategory.slug == slug)
-        )
+        result = await session.execute(select(WorkstreamCategory).where(WorkstreamCategory.slug == slug))
         cat = result.scalar_one_or_none()
         if cat:
             return str(cat.id)
@@ -137,9 +135,7 @@ async def test_update_workstream(authenticated_client: AsyncClient, seed_user: d
 
 
 @pytest.mark.asyncio
-async def test_delete_workstream_with_stages_returns_409(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_delete_workstream_with_stages_returns_409(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     project_id = await _create_project(authenticated_client, seed_user)
     category_id = await _get_category_id(authenticated_client, "master_data")
 
@@ -150,16 +146,12 @@ async def test_delete_workstream_with_stages_returns_409(
     ws_id = create_resp.json()["id"]
 
     # Default stages are auto-seeded on creation, so DELETE must return 409
-    resp = await authenticated_client.delete(
-        f"/api/v1/projects/{project_id}/workstreams/{ws_id}"
-    )
+    resp = await authenticated_client.delete(f"/api/v1/projects/{project_id}/workstreams/{ws_id}")
     assert resp.status_code == 409
 
 
 @pytest.mark.asyncio
-async def test_create_workstream_invalid_category(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_create_workstream_invalid_category(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     project_id = await _create_project(authenticated_client, seed_user)
     fake_id = "00000000-0000-0000-0000-000000000000"
 
