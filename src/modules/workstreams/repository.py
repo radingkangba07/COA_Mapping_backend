@@ -1,6 +1,7 @@
 from typing import Any
 from uuid import UUID
 
+from coa_db_models.projects.models import Project
 from coa_db_models.workstreams.models import Workstream, WorkstreamCategory, WorkstreamStage, WorkstreamStatusLog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +42,15 @@ class WorkstreamRepository(BaseRepository[Workstream]):
         result = await self.session.execute(
             select(Workstream, WorkstreamCategory.name.label("category_name"))
             .join(WorkstreamCategory, Workstream.category_id == WorkstreamCategory.id)
+            .where(Workstream.id == workstream_id)
+        )
+        return result.one_or_none()
+
+    async def get_with_project(self, workstream_id: UUID) -> tuple[Workstream, Project] | None:
+        """Return (Workstream, Project) for the context endpoint."""
+        result = await self.session.execute(
+            select(Workstream, Project)
+            .join(Project, Workstream.project_id == Project.id)
             .where(Workstream.id == workstream_id)
         )
         return result.one_or_none()

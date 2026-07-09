@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import get_db
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
+from src.modules.storage.repository import FileRepository
 from src.modules.workstreams.dependencies import (
     get_stage_service,
     get_status_service,
@@ -21,6 +22,7 @@ from src.modules.workstreams.schemas import (
     StageResponse,
     StatusLogEntry,
     StatusTransitionRequest,
+    WorkstreamContextResponse,
     WorkstreamCreate,
     WorkstreamListResponse,
     WorkstreamResponse,
@@ -110,6 +112,35 @@ async def delete_workstream(
     except Exception:
         logger.exception("Failed to delete workstream %s", workstream_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to delete workstream"})
+
+
+# ── Workstream context endpoint ───────────────────────────────────────────────
+
+
+@router.get(
+    "/workstreams/{workstream_id}/context",
+    response_model=WorkstreamContextResponse,
+)
+async def get_workstream_context(
+    workstream_id: UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    service: WorkstreamService = Depends(get_workstream_service),
+):
+    try:
+        await resolve_workstream_project_access(workstream_id, user, db, "viewer")
+        from src.modules.workstreams.repository import StageRepository
+
+        return await service.get_context(
+            workstream_id,
+            stage_repo=StageRepository(db),
+            file_repo=FileRepository(db),
+        )
+    except AppError:
+        raise
+    except Exception:
+        logger.exception("Failed to get context for workstream %s", workstream_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to get workstream context"})
 
 
 # ── Stage endpoints (DAB-20) ──────────────────────────────────────────────────

@@ -27,6 +27,7 @@ async def upload_file(
     project_id: UUID = Form(...),
     file_type: str = Form("source_erp"),
     job_id: UUID | None = Form(None),
+    workstream_id: UUID | None = Form(None),
     user: User = Depends(get_current_user),
     service: StorageService = Depends(get_storage_service),
 ):
@@ -40,6 +41,7 @@ async def upload_file(
             user_id=user.id,
             uploaded_by=user.id,
             job_id=job_id,
+            workstream_id=workstream_id,
         )
         return {"success": True, "file": FileUploadResponse.model_validate(result)}
     except AppError:
@@ -150,6 +152,7 @@ async def files_upload(
     file_type: str = Query(...),
     source_system: str = Query(default="unknown"),
     target_system: str = Query(default="unknown"),
+    workstream_id: UUID | None = Query(default=None),
     user: User = Depends(get_current_user),
     service: StorageService = Depends(get_storage_service),
 ):
@@ -179,6 +182,7 @@ async def files_upload(
             file_type=file_type,
             user_id=user.id,
             uploaded_by=user.id,
+            workstream_id=workstream_id,
         )
 
         all_data = df.fillna("").to_dict(orient="records") if df is not None else []

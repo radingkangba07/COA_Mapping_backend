@@ -73,3 +73,33 @@ class StatusLogEntry(BaseModel):
     changed_by: uuid.UUID | None
     changed_by_name: str | None
     created_at: datetime
+
+
+# ── Workstream context (Open button) ─────────────────────────────────────────
+
+
+class WorkstreamFileInfo(BaseModel):
+    id: uuid.UUID
+    file_type: str
+    original_filename: str
+    row_count: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkstreamProjectInfo(BaseModel):
+    id: uuid.UUID
+    source_system: str
+    target_system: str
+
+
+class WorkstreamContextResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    display_code: str
+    status: str
+    current_stage: str | None
+    project: WorkstreamProjectInfo
+    stages: list[StageResponse]
+    files: list[WorkstreamFileInfo]

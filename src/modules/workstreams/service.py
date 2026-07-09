@@ -16,7 +16,10 @@ from src.modules.workstreams.schemas import (
     StageResponse,
     StatusLogEntry,
     StatusTransitionRequest,
+    WorkstreamContextResponse,
     WorkstreamCreate,
+    WorkstreamFileInfo,
+    WorkstreamProjectInfo,
     WorkstreamResponse,
     WorkstreamUpdate,
 )
@@ -86,6 +89,36 @@ class WorkstreamService:
             await self.session.refresh(workstream)
 
         return _to_response(workstream, category_name)
+
+    async def get_context(
+        self,
+        workstream_id: UUID,
+        stage_repo: "StageRepository",
+        file_repo,
+    ) -> WorkstreamContextResponse:
+
+        row = await self.workstream_repo.get_with_project(workstream_id)
+        if row is None:
+            raise NotFoundError(f"Workstream {workstream_id} not found")
+        workstream, project = row
+
+        stages = await stage_repo.list_by_workstream(workstream_id)
+        files = await file_repo.list_by_workstream(workstream_id)
+
+        return WorkstreamContextResponse(
+            id=workstream.id,
+            name=workstream.name,
+            display_code=workstream.display_code,
+            status=workstream.status,
+            current_stage=workstream.current_stage,
+            project=WorkstreamProjectInfo(
+                id=project.id,
+                source_system=project.source_system,
+                target_system=project.target_system,
+            ),
+            stages=[StageResponse.model_validate(s) for s in stages],
+            files=[WorkstreamFileInfo.model_validate(f) for f in files],
+        )
 
     async def delete(self, workstream_id: UUID) -> None:
         workstream = await self.workstream_repo.get_by_id(workstream_id)
