@@ -121,9 +121,7 @@ async def test_wizard_create_valid_erp_combo_returns_active(
     assert resp.json()["status"] == "active"
 
 
-async def test_wizard_create_without_vendor_ids_succeeds(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_wizard_create_without_vendor_ids_succeeds(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     # vendor IDs are auto-derived from product IDs — omitting them is valid
     payload = _create_payload(seed_user["org_id"])
     payload.pop("source_vendor_id", None)

@@ -260,9 +260,7 @@ class ProjectService:
             cat_result = await self.session.execute(
                 select(WorkstreamCategory).where(WorkstreamCategory.slug.in_(needed_slugs))
             )
-            categories: dict[str, WorkstreamCategory] = {
-                cat.slug: cat for cat in cat_result.scalars().all()
-            }
+            categories: dict[str, WorkstreamCategory] = {cat.slug: cat for cat in cat_result.scalars().all()}
             ws_repo = WorkstreamRepository(self.session)
             for category_slug, ws_name in ws_items:
                 cat = categories.get(category_slug)
