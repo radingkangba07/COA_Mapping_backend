@@ -226,7 +226,7 @@ class ProjectCreateFull(BaseModel):
     master_data_selections: list[MasterDataSelectionItem] = []
     opening_balance_selections: list[OpeningBalanceSelectionItem] = []
     mcp_connection_config: McpConnectionConfigCreate | None = None
-    members: list[MemberAdd] = []
+    members: list[MemberInvite] = []
 
     @model_validator(mode="after")
     def validate_no_mcp_server(self) -> "ProjectCreateFull":
@@ -238,11 +238,10 @@ class ProjectCreateFull(BaseModel):
     @model_validator(mode="after")
     def validate_for_create(self) -> "ProjectCreateFull":
         if self.action == "create":
+            # vendor IDs are auto-derived from product IDs in the service
             required = [
-                "source_vendor_id",
                 "source_product_id",
                 "source_connection_method_id",
-                "target_vendor_id",
                 "target_product_id",
                 "target_connection_method_id",
             ]
