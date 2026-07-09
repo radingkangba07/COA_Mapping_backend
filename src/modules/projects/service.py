@@ -15,7 +15,6 @@ from coa_db_models.workstreams.models import WorkstreamCategory
 from sqlalchemy import select
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
-from src.modules.workstreams.repository import WorkstreamRepository
 from src.modules.projects.protocols import (
     OrgMembershipReaderProtocol,
     ProjectAccessRepositoryProtocol,
@@ -29,6 +28,7 @@ from src.modules.projects.schemas import (
     ProjectOverviewWorkstreamItem,
     ProjectUpdate,
 )
+from src.modules.workstreams.repository import WorkstreamRepository
 
 logger = logging.getLogger(__name__)
 
