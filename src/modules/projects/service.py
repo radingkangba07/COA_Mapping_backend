@@ -11,6 +11,7 @@ from coa_db_models.projects.models import (
     ProjectOpeningBalanceSelection,
     ProjectWizardFields,
 )
+from coa_db_models.workstreams.models import WorkstreamCategory
 from sqlalchemy import select
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
@@ -27,10 +28,30 @@ from src.modules.projects.schemas import (
     ProjectOverviewWorkstreamItem,
     ProjectUpdate,
 )
+from src.modules.workstreams.repository import WorkstreamRepository
 
 logger = logging.getLogger(__name__)
 
 PERMISSION_LEVELS = {"viewer": 1, "editor": 2, "approver": 3, "admin": 4}
+
+# Maps frontend data_type / account_type slugs to (category_slug, workstream_name).
+# Used by create_project_full to auto-create workstreams from scope selections.
+_SCOPE_TO_WORKSTREAM: dict[str, tuple[str, str]] = {
+    "chart-of-accounts": ("master_data", "Chart of Accounts"),
+    "customers": ("master_data", "Customers"),
+    "vendors": ("master_data", "Vendors"),
+    "items": ("master_data", "Items"),
+    "locations": ("master_data", "Locations"),
+    "contacts": ("master_data", "Contacts"),
+    "vehicles": ("master_data", "Vehicles"),
+    "equipment": ("master_data", "Equipment"),
+    "fixed-assets": ("master_data", "Fixed Assets"),
+    "historical-balance-sheet-start": ("opening_balances", "Historical Balance Sheet Start"),
+    "trial-balance-movement": ("opening_balances", "Trial Balance Movement"),
+    "open-ar": ("opening_balances", "Open Accounts Receivable"),
+    "open-ap": ("opening_balances", "Open Accounts Payable"),
+    "stock-on-hand": ("opening_balances", "Stock on Hand"),
+}
 
 # Fields added by the data-migration wizard that require a DB migration in
 # coa-db-models before they can be persisted. The service sets them
@@ -221,6 +242,41 @@ class ProjectService:
         if data.opening_balance_selections:
             await self.session.flush()
 
+        # 7.5 Auto-create workstreams from scope selections
+        ws_items: list[tuple[str, str]] = []
+        for item in data.master_data_selections:
+            if item.selected:
+                mapping = _SCOPE_TO_WORKSTREAM.get(item.data_type)
+                if mapping:
+                    ws_items.append(mapping)
+        for bal_item in data.opening_balance_selections:
+            if bal_item.include:
+                mapping = _SCOPE_TO_WORKSTREAM.get(bal_item.account_type)
+                if mapping:
+                    ws_items.append(mapping)
+
+        if ws_items:
+            needed_slugs = {slug for slug, _ in ws_items}
+            cat_result = await self.session.execute(
+                select(WorkstreamCategory).where(WorkstreamCategory.slug.in_(needed_slugs))
+            )
+            categories: dict[str, WorkstreamCategory] = {cat.slug: cat for cat in cat_result.scalars().all()}
+            ws_repo = WorkstreamRepository(self.session)
+            for category_slug, ws_name in ws_items:
+                cat = categories.get(category_slug)
+                if not cat:
+                    logger.warning("WorkstreamCategory slug '%s' not found — skipped", category_slug)
+                    continue
+                seq = await ws_repo.next_display_seq(project.id, cat.id)
+                display_code = f"{cat.display_code_prefix}-{seq:03d}"
+                await ws_repo.create_with_stages(
+                    project_id=project.id,
+                    category_id=cat.id,
+                    name=ws_name,
+                    display_code=display_code,
+                    created_by=user.id,
+                )
+
         # 8. Requester always admin
         await self.access_repo.grant(
             user_id=user.id,
@@ -229,14 +285,14 @@ class ProjectService:
             assigned_by=user.id,
         )
 
-        # 9. Add members (skip requester — already added as admin)
+        # 9. Add members by email (skip failures — requester already added as admin)
         for member in data.members:
-            if member.user_id != user.id:
-                await self.access_repo.grant(
-                    user_id=member.user_id,
-                    project_id=project.id,
-                    permission=member.permission,
-                    assigned_by=user.id,
+            try:
+                await self.grant_access(project.id, member.email, member.permission, user)
+            except Exception:
+                logger.warning(
+                    "Could not grant access to '%s' during project creation: skipped",
+                    member.email,
                 )
 
         # 10. Single commit — all sections or nothing
