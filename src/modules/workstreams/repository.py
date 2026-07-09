@@ -53,7 +53,10 @@ class WorkstreamRepository(BaseRepository[Workstream]):
             .join(Project, Workstream.project_id == Project.id)
             .where(Workstream.id == workstream_id)
         )
-        return result.one_or_none()
+        row = result.one_or_none()
+        if row is None:
+            return None
+        return (row[0], row[1])
 
     async def next_display_seq(self, project_id: UUID, category_id: UUID) -> int:
         """Return the next sequence number for display_code generation.
