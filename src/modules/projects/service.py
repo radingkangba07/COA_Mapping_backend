@@ -27,6 +27,7 @@ from src.modules.projects.schemas import (
     ProjectOverviewWorkstreamItem,
     ProjectUpdate,
 )
+from src.modules.workstreams.repository import WorkstreamCategoryRepository, WorkstreamRepository
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +222,67 @@ class ProjectService:
         if data.opening_balance_selections:
             await self.session.flush()
 
-        # 8. Requester always admin
+        # 8. Seed workstreams for action=create from the selections above
+        if data.action == "create":
+            md_label: dict[str, str] = {
+                "chart-of-accounts": "Chart of Accounts",
+                "customers": "Customers",
+                "vendors": "Vendors",
+                "items": "Items",
+                "locations": "Locations",
+                "contacts": "Contacts",
+                "vehicles": "Vehicles",
+                "equipment": "Equipment",
+                "fixed-assets": "Fixed Assets",
+            }
+            ob_label: dict[str, str] = {
+                "historical-balance-sheet-start": "Historical Balance Sheet Start",
+                "trial-balance-movement": "Trial Balance Movement",
+                "open-ar": "Open Accounts Receivable",
+                "open-ap": "Open Accounts Payables",
+                "stock-on-hand": "Stock On Hand",
+            }
+            cat_repo = WorkstreamCategoryRepository(self.session)
+            ws_repo = WorkstreamRepository(self.session)
+            cats = {c.slug: c for c in await cat_repo.list_ordered()}
+
+            md_cat = cats.get("master_data")
+            if md_cat:
+                # COA is always seeded first; other selected items follow without duplication
+                other_md = [
+                    item.data_type for item in data.master_data_selections
+                    if item.selected and item.data_type != "chart-of-accounts"
+                ]
+                ordered_md = ["chart-of-accounts", *other_md]
+                for seq, data_type in enumerate(ordered_md, start=1):
+                    label = md_label.get(data_type, data_type.replace("-", " ").title())
+                    code = f"{md_cat.display_code_prefix}-{seq:03d}"
+                    await ws_repo.create_with_stages(
+                        project_id=project.id,
+                        category_id=md_cat.id,
+                        name=label,
+                        display_code=code,
+                        created_by=user.id,
+                    )
+
+            ob_cat = cats.get("opening_balances")
+            if ob_cat:
+                ob_seq = 1
+                for bal in data.opening_balance_selections:
+                    if not bal.include:
+                        continue
+                    label = ob_label.get(bal.account_type, bal.account_type.replace("-", " ").title())
+                    code = f"{ob_cat.display_code_prefix}-{ob_seq:03d}"
+                    await ws_repo.create_with_stages(
+                        project_id=project.id,
+                        category_id=ob_cat.id,
+                        name=label,
+                        display_code=code,
+                        created_by=user.id,
+                    )
+                    ob_seq += 1
+
+        # 9. Requester always admin
         await self.access_repo.grant(
             user_id=user.id,
             project_id=project.id,
@@ -229,7 +290,7 @@ class ProjectService:
             assigned_by=user.id,
         )
 
-        # 9. Add members (skip requester — already added as admin)
+        # 10. Add members (skip requester — already added as admin)
         for member in data.members:
             if member.user_id != user.id:
                 await self.access_repo.grant(
@@ -239,7 +300,7 @@ class ProjectService:
                     assigned_by=user.id,
                 )
 
-        # 10. Single commit — all sections or nothing
+        # 11. Single commit — all sections or nothing
         await self.session.commit()
         logger.info("Project '%s' (full wizard) created by user %s", project.name, user.id)
         return project
