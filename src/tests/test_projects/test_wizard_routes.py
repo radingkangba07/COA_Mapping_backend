@@ -164,24 +164,26 @@ async def test_wizard_create_missing_all_target_fields_returns_422(
 # ---------------------------------------------------------------------------
 
 
-async def test_wizard_create_unknown_source_vendor_returns_422(
+async def test_wizard_create_unknown_source_vendor_is_accepted(
     authenticated_client: AsyncClient, seed_user: dict[str, Any]
 ):
+    # Vendor is a denormalised display string — not validated against a catalogue.
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json=_create_payload(seed_user["org_id"], source_vendor_id="nonexistent_vendor"),
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 201
 
 
-async def test_wizard_create_unknown_target_vendor_returns_422(
+async def test_wizard_create_unknown_target_vendor_is_accepted(
     authenticated_client: AsyncClient, seed_user: dict[str, Any]
 ):
+    # Vendor is a denormalised display string — not validated against a catalogue.
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json=_create_payload(seed_user["org_id"], target_vendor_id="nonexistent_vendor"),
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 201
 
 
 async def test_wizard_create_unknown_source_product_returns_422(

@@ -10,8 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import get_db
 from src.core.exceptions import NotFoundError, ValidationError
 from src.modules.erp.dependencies import get_erp_service
+from src.modules.erp.repository import ErpProductRepository
 from src.modules.erp.schemas import (
     AccountTypesResponse,
+    CatalogueConnectionMethod,
+    CatalogueProduct,
+    CatalogueVendor,
     CompatibilityResult,
     ConnectionMethod,
     ERPSystem,
@@ -27,6 +31,14 @@ legacy_erp_router = APIRouter(prefix="/api/v1", tags=["erp"], include_in_schema=
 
 _compat_cache: dict[tuple[str, str, str], tuple[float, CompatibilityResult]] = {}
 _COMPAT_TTL = 300.0
+
+_CM_LABELS: dict[str, str] = {
+    "csv_file": "CSV File Upload",
+    "mcp_server": "MCP Server (Model Context Protocol)",
+    "cloud_saas": "Cloud (SaaS)",
+    "on_premise": "On-Premise",
+}
+_CM_REQUIRES_MCP: set[str] = {"mcp_server"}
 
 
 # ── Compatibility check (declared before /{erp_id} to avoid route shadowing) ─
@@ -121,6 +133,63 @@ async def list_connection_methods(service: ERPConfigService = Depends(get_erp_se
     except Exception:
         logger.exception("Failed to list connection methods")
         return JSONResponse(status_code=500, content={"detail": "Failed to load connection methods"})
+
+
+# ── Catalogue endpoints (DB-backed cascade: vendor → product → method) ────────
+
+
+@router.get("/catalogue/vendors", response_model=list[CatalogueVendor])
+async def catalogue_vendors(db: AsyncSession = Depends(get_db)) -> list[CatalogueVendor]:
+    try:
+        repo = ErpProductRepository(db)
+        vendors = await repo.get_unique_vendors()
+        return [CatalogueVendor(vendor=v) for v in vendors]
+    except Exception:
+        logger.exception("Failed to list catalogue vendors")
+        return JSONResponse(status_code=500, content={"detail": "Failed to load vendors"})  # type: ignore[return-value]
+
+
+@router.get("/catalogue/vendors/{vendor}/products", response_model=list[CatalogueProduct])
+async def catalogue_products(vendor: str, db: AsyncSession = Depends(get_db)) -> list[CatalogueProduct]:
+    try:
+        repo = ErpProductRepository(db)
+        products = await repo.get_products_by_vendor(vendor)
+        return [
+            CatalogueProduct(
+                id=p.id,
+                vendor=p.vendor,
+                product_name=p.product_name,
+                connection_methods=p.connection_methods,
+            )
+            for p in products
+        ]
+    except Exception:
+        logger.exception("Failed to list catalogue products for vendor '%s'", vendor)
+        return JSONResponse(status_code=500, content={"detail": "Failed to load products"})  # type: ignore[return-value]
+
+
+@router.get("/catalogue/products/{product_id}/connection-methods", response_model=list[CatalogueConnectionMethod])
+async def catalogue_connection_methods(
+    product_id: str, db: AsyncSession = Depends(get_db)
+) -> list[CatalogueConnectionMethod]:
+    try:
+        repo = ErpProductRepository(db)
+        product = await repo.get_product(product_id)
+        if not product:
+            raise NotFoundError(f"Product '{product_id}' not found")
+        return [
+            CatalogueConnectionMethod(
+                id=cm,
+                name=_CM_LABELS.get(cm, cm),
+                requires_mcp_config=cm in _CM_REQUIRES_MCP,
+            )
+            for cm in product.connection_methods
+        ]
+    except NotFoundError:
+        raise
+    except Exception:
+        logger.exception("Failed to get connection methods for product '%s'", product_id)
+        return JSONResponse(status_code=500, content={"detail": "Failed to load connection methods"})  # type: ignore[return-value]
 
 
 # ── ERP product endpoints ─────────────────────────────────────────────────────

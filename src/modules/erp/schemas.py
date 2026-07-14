@@ -46,3 +46,23 @@ class SampleDataResponse(BaseModel):
     erp_name: str
     data: list[dict]
     row_count: int
+
+
+# ── Catalogue schemas (DB-backed cascade: vendor → product → connection method) ─
+
+
+class CatalogueVendor(BaseModel):
+    vendor: str
+
+
+class CatalogueProduct(BaseModel):
+    id: str
+    vendor: str
+    product_name: str
+    connection_methods: list[str]
+
+
+class CatalogueConnectionMethod(BaseModel):
+    id: str
+    name: str
+    requires_mcp_config: bool = False

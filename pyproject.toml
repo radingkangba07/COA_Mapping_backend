@@ -57,7 +57,7 @@ dev-dependencies = [
 ]
 
 [tool.uv.sources]
-coa-db-models = { git = "https://github.com/bhavna-linkedrp/coa-db-models", branch = "develop" }
+coa-db-models = { path = "/Users/radingrichard/Downloads/LinkedERP/coa-db-models", editable = true }  # LOCAL DEV — revert before pushing
 
 # ── Ruff (replaces black, isort, flake8) ──────────────────────────────────────
 
