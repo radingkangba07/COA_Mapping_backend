@@ -121,13 +121,13 @@ async def test_wizard_create_valid_erp_combo_returns_active(
     assert resp.json()["status"] == "active"
 
 
-async def test_wizard_create_missing_source_vendor_returns_422(
-    authenticated_client: AsyncClient, seed_user: dict[str, Any]
-):
+async def test_wizard_create_without_vendor_ids_succeeds(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    # vendor IDs are auto-derived from product IDs — omitting them is valid
     payload = _create_payload(seed_user["org_id"])
-    del payload["source_vendor_id"]
+    payload.pop("source_vendor_id", None)
+    payload.pop("target_vendor_id", None)
     resp = await authenticated_client.post("/api/v1/projects", json=payload)
-    assert resp.status_code == 422
+    assert resp.status_code == 201
 
 
 async def test_wizard_create_missing_source_product_returns_422(
@@ -301,7 +301,7 @@ async def test_wizard_create_with_members_grants_access(
 
     payload = _draft_payload(
         seed_user["org_id"],
-        members=[{"user_id": member_id, "permission": "editor"}],
+        members=[{"email": member_email, "permission": "editor"}],
     )
     create_resp = await authenticated_client.post("/api/v1/projects", json=payload)
     assert create_resp.status_code == 201
@@ -323,7 +323,7 @@ async def test_wizard_create_creator_always_admin_regardless_of_members(
 
     payload = _draft_payload(
         seed_user["org_id"],
-        members=[{"user_id": member_id, "permission": "viewer"}],
+        members=[{"email": member_email, "permission": "viewer"}],
     )
     create_resp = await authenticated_client.post("/api/v1/projects", json=payload)
     project_id = create_resp.json()["id"]
