@@ -146,14 +146,12 @@ class ProjectService:
 
         erp_service = get_erp_service()
 
-        # 1. Validate ERP product references: accept from DB catalogue OR legacy YAML
-        from src.modules.erp.repository import ErpProductRepository
-        erp_repo = ErpProductRepository(self.session)
+        # 1. Validate ERP product references against YAML catalogue
         src_pid = data.source_product_id
-        if src_pid and not await erp_repo.get_product(src_pid) and not erp_service.get_system(src_pid):
+        if src_pid and not erp_service.get_system(src_pid):
             raise ValidationError(f"Unknown source product: '{src_pid}'")
         tgt_pid = data.target_product_id
-        if tgt_pid and not await erp_repo.get_product(tgt_pid) and not erp_service.get_system(tgt_pid):
+        if tgt_pid and not erp_service.get_system(tgt_pid):
             raise ValidationError(f"Unknown target product: '{tgt_pid}'")
 
         # 2. In-memory compatibility check (action=create only)

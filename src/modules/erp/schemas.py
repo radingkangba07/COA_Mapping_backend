@@ -48,7 +48,7 @@ class SampleDataResponse(BaseModel):
     row_count: int
 
 
-# ── Catalogue schemas (DB-backed cascade: vendor → product → connection method) ─
+# ── Catalogue schemas (YAML-backed cascade: vendor → product → connection method) ─
 
 
 class CatalogueVendor(BaseModel):

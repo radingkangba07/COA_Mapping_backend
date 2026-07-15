@@ -9,7 +9,7 @@ async def test_list_erp_systems(test_client: AsyncClient):
     resp = await test_client.get("/api/v1/erp-systems")
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) == 9
+    assert len(data) >= 9
 
 
 @pytest.mark.asyncio
@@ -18,7 +18,7 @@ async def test_get_single_system(test_client: AsyncClient):
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == "sap"
-    assert data["name"] == "SAP"
+    assert data["name"] == "SAP S/4HANA"
 
 
 @pytest.mark.asyncio

@@ -111,6 +111,20 @@ class ERPConfigService:
         method_ids: list[str] = system.get("connection_methods", [])
         return [{"id": mid, **self._connection_methods[mid]} for mid in method_ids if mid in self._connection_methods]
 
+    # ── Cascade helpers (vendor → product → method) ────────────────────────
+
+    def get_catalogue_vendors(self) -> list[str]:
+        """Unique vendor display names, ordered as defined in YAML."""
+        return [v.get("name", k) for k, v in self._vendors.items()]
+
+    def get_products_by_vendor_name(self, vendor_name: str) -> list[dict]:
+        """Return products for a vendor matched by display name (case-insensitive)."""
+        name_lower = vendor_name.lower()
+        for vendor_id, vendor in self._vendors.items():
+            if vendor.get("name", "").lower() == name_lower:
+                return self.get_products_for_vendor(vendor_id)
+        return []
+
 
 async def check_compatibility_db(
     session: AsyncSession,
