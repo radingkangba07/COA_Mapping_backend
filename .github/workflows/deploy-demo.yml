@@ -65,8 +65,6 @@ jobs:
             git fetch origin
             git reset --hard "origin/${BE_REF}"
             GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" COA_DB_MODELS_BRANCH="demo" bash scripts/deploy.sh demo backend
-            echo "Running migrations..."
-            docker exec coa-demo-api-service-1 uv run alembic upgrade head
             echo "Seeding demo data..."
             docker cp "${BACKEND_DIR}/seed.py" coa-demo-api-service-1:/app/seed.py
             docker exec coa-demo-api-service-1 uv run python /app/seed.py
