@@ -20,7 +20,6 @@ on:
       - "uv.lock"
       - "alembic.ini"
       - "scripts/deploy.sh"
-      - "seed.py"
       - ".github/workflows/deploy-demo.yml"
   workflow_dispatch:   # allow manual re-deploy from the Actions tab
 
@@ -65,6 +64,3 @@ jobs:
             git fetch origin
             git reset --hard "origin/${BE_REF}"
             GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" COA_DB_MODELS_BRANCH="demo" bash scripts/deploy.sh demo backend
-            echo "Seeding demo data..."
-            docker cp "${BACKEND_DIR}/seed.py" coa-demo-api-service-1:/app/seed.py
-            docker exec coa-demo-api-service-1 uv run python /app/seed.py
