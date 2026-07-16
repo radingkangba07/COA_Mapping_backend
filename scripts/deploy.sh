@@ -44,6 +44,12 @@ case ${ENV} in
         COMPOSE_FILE="docker-compose.staging.yml"
         PROJECT_NAME="coa-staging"
         ;;
+    demo)
+        FE_BRANCH="demo"
+        BE_BRANCH="deploy-demo"
+        COMPOSE_FILE="docker-compose.demo.yml"
+        PROJECT_NAME="coa-demo"
+        ;;
     production)
         FE_BRANCH="main"
         BE_BRANCH="main"
