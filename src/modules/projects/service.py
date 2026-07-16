@@ -528,8 +528,7 @@ class ProjectService:
                 groups_map[slug] = {"key": slug, "title": row.category_name, "workstreams": []}
                 groups_order.append(slug)
 
-            total, completed = stage_counts.get(ws.id, (0, 0))
-            progress = round((completed / total) * 100) if total > 0 else 0
+            progress = stage_counts.get(ws.id, 0)
 
             groups_map[slug]["workstreams"].append(
                 ProjectOverviewWorkstreamItem(
@@ -545,6 +544,15 @@ class ProjectService:
 
         groups = [ProjectOverviewGroupItem(**groups_map[k]) for k in groups_order]
 
+        # Overall progress = average of all included workstream progresses.
+        # Dynamically computed so additional workstreams are reflected automatically.
+        all_progresses = [
+            ws_item.progress
+            for g in groups
+            for ws_item in g.workstreams
+        ]
+        overall_progress = round(sum(all_progresses) / len(all_progresses)) if all_progresses else 0
+
         return ProjectOverviewResponse(
             id=project.id,
             name=project.name,
@@ -555,6 +563,7 @@ class ProjectService:
             source_deployment=None,
             target_deployment=None,
             last_edited_at=project.updated_at,
+            overall_progress=overall_progress,
             groups=groups,
         )
 

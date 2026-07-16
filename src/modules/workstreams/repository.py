@@ -8,12 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.base_repository import BaseRepository
 
-# Default stages seeded on every new workstream, in sequence order.
-DEFAULT_STAGES: list[tuple[str, int]] = [
-    ("ERP Select", 1),
-    ("Field Mapping", 2),
-    ("Validation", 3),
-    ("Migration", 4),
+# Default stages seeded on every new workstream: (name, sequence, weight).
+# Weights sum to 100. Applies to all connection methods (CSV and MCP).
+DEFAULT_STAGES: list[tuple[str, int, int]] = [
+    ("Upload Files", 1, 30),
+    ("Type Mapping", 2, 30),
+    ("Account Mapping: Low Confidence", 3, 10),
+    ("Account Mapping: Medium Confidence", 4, 10),
+    ("Account Mapping: Strong Confidence", 5, 10),
+    ("Preview & Export", 6, 10),
 ]
 
 
@@ -102,19 +105,20 @@ class WorkstreamRepository(BaseRepository[Workstream]):
             name=name,
             display_code=display_code,
             status="not_started",
-            current_stage=DEFAULT_STAGES[0][0],
+            current_stage=DEFAULT_STAGES[0][0],  # "Upload Files"
             created_by=created_by,
         )
         self.session.add(workstream)
         await self.session.flush()
         await self.session.refresh(workstream)
 
-        for stage_name, seq in DEFAULT_STAGES:
+        for stage_name, seq, weight in DEFAULT_STAGES:
             self.session.add(
                 WorkstreamStage(
                     workstream_id=workstream.id,
                     name=stage_name,
                     sequence=seq,
+                    weight=weight,
                     is_completed=False,
                 )
             )

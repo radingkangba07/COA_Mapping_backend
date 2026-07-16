@@ -128,7 +128,7 @@ async def test_overview_progress_updates_after_stages_completed(
     )
     ws_id = ws_resp.json()["id"]
 
-    # Complete 2 of 4 stages
+    # Complete the first 2 stages: "Upload Files" (weight=30) + "Type Mapping" (weight=30) = 60%
     stages = (await authenticated_client.get(f"/api/v1/workstreams/{ws_id}/stages")).json()
     for stage in stages[:2]:
         await authenticated_client.patch(f"/api/v1/workstreams/{ws_id}/stages/{stage['id']}/complete")
@@ -136,7 +136,7 @@ async def test_overview_progress_updates_after_stages_completed(
     resp = await authenticated_client.get(f"/api/v1/projects/{project['id']}/overview")
     assert resp.status_code == 200
     ws = resp.json()["groups"][0]["workstreams"][0]
-    assert ws["progress"] == 50
+    assert ws["progress"] == 60
 
 
 @pytest.mark.asyncio
