@@ -11,8 +11,9 @@ name: Deploy to Demo
 #      version of the script on the branch — no host-side drift.
 
 on:
-  push:
+  pull_request:
     branches: [deploy-demo]
+    types: [opened, synchronize, reopened]
     paths:
       - "src/**"
       - "pyproject.toml"
