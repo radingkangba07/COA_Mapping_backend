@@ -95,9 +95,7 @@ class ProjectRepository(BaseRepository[Project]):
         result = await self.session.execute(
             select(
                 WorkstreamStage.workstream_id,
-                func.sum(
-                    case((WorkstreamStage.is_completed, WorkstreamStage.weight), else_=0)
-                ).label("progress"),
+                func.sum(case((WorkstreamStage.is_completed, WorkstreamStage.weight), else_=0)).label("progress"),
             )
             .where(WorkstreamStage.workstream_id.in_(workstream_ids))
             .group_by(WorkstreamStage.workstream_id)
