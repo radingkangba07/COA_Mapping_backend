@@ -113,17 +113,23 @@ class ERPConfigService:
 
     # ── Cascade helpers (vendor → product → method) ────────────────────────
 
-    def get_catalogue_vendors(self) -> list[str]:
-        """Unique vendor display names, ordered as defined in YAML."""
-        return [v.get("name", k) for k, v in self._vendors.items()]
-
-    def get_products_by_vendor_name(self, vendor_name: str) -> list[dict]:
-        """Return products for a vendor matched by display name (case-insensitive)."""
-        name_lower = vendor_name.lower()
+    def get_catalogue_vendors(self) -> list[dict]:
+        """Full vendor → product → connection method tree from YAML (single call)."""
+        result = []
         for vendor_id, vendor in self._vendors.items():
-            if vendor.get("name", "").lower() == name_lower:
-                return self.get_products_for_vendor(vendor_id)
-        return []
+            products = []
+            for pid in vendor.get("products", []):
+                system = self.systems.get(pid)
+                if not system:
+                    continue
+                methods = [
+                    {"id": mid, **self._connection_methods[mid]}
+                    for mid in system.get("connection_methods", [])
+                    if mid in self._connection_methods
+                ]
+                products.append({"id": pid, "product_name": system.get("name", pid), "connection_methods": methods})
+            result.append({"vendor": vendor.get("name", vendor_id), "products": products})
+        return result
 
 
 async def check_compatibility_db(
