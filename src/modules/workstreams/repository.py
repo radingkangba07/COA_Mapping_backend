@@ -13,8 +13,10 @@ from src.core.base_repository import BaseRepository
 DEFAULT_STAGES: list[tuple[str, int, int]] = [
     ("Upload Files", 1, 30),
     ("Type Mapping", 2, 30),
-    ("Account Mapping", 3, 30),
-    ("Preview & Export", 4, 10),
+    ("Account Mapping: 1", 3, 10),
+    ("Account Mapping: 2", 4, 10),
+    ("Account Mapping: 3", 5, 10),
+    ("Preview & Export", 6, 10),
 ]
 
 

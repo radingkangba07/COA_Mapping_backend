@@ -99,17 +99,20 @@ class WorkstreamService:
             current_seq = next((s.sequence for s in all_stages if s.name == workstream.current_stage), 0)
             target_seq = next((s.sequence for s in all_stages if s.name == data.current_stage), current_seq)
 
-            now = datetime.now(UTC)
-            for stage in all_stages:
-                if current_seq <= stage.sequence < target_seq and not stage.is_completed:
-                    stage.is_completed = True
-                    stage.completed_at = now
+            # Only advance — never move current_stage backward. A re-confirm on
+            # an already-completed band sends a PATCH that would otherwise regress
+            # current_stage to an earlier sub-stage.
+            if target_seq > current_seq:
+                now = datetime.now(UTC)
+                for stage in all_stages:
+                    if current_seq <= stage.sequence < target_seq and not stage.is_completed:
+                        stage.is_completed = True
+                        stage.completed_at = now
+                workstream.current_stage = data.current_stage
 
-            workstream.current_stage = data.current_stage
-
-            # Transition status to in_progress on first stage advance.
-            if workstream.status == "not_started":
-                workstream.status = "in_progress"
+                # Transition status to in_progress on first stage advance.
+                if workstream.status == "not_started":
+                    workstream.status = "in_progress"
 
         # Allow the frontend to force-complete a workstream (mark all stages done).
         if data.status == "completed":
