@@ -57,4 +57,4 @@ jobs:
             git remote set-url origin "https://x-access-token:${GH_FETCH_TOKEN}@github.com/bhavna-linkedrp/COA_Mapping_backend_V0.git"
             git fetch origin
             git reset --hard "origin/${BE_REF}"
-            GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" COA_DB_MODELS_BRANCH="develop" bash scripts/deploy.sh demo backend
+            GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" COA_DB_MODELS_BRANCH="demo" bash scripts/deploy.sh demo backend
