@@ -54,16 +54,14 @@ async def test_list_stages(authenticated_client: AsyncClient, seed_user: dict[st
     resp = await authenticated_client.get(f"/api/v1/workstreams/{ws_id}/stages")
     assert resp.status_code == 200
     stages = resp.json()
-    assert len(stages) == 6
+    assert len(stages) == 4
     sequences = [s["sequence"] for s in stages]
-    assert sequences == [1, 2, 3, 4, 5, 6]
+    assert sequences == [1, 2, 3, 4]
     names = [s["name"] for s in stages]
     assert names == [
         "Upload Files",
         "Type Mapping",
-        "Account Mapping: Low Confidence",
-        "Account Mapping: Medium Confidence",
-        "Account Mapping: Strong Confidence",
+        "Account Mapping",
         "Preview & Export",
     ]
     assert all(not s["is_completed"] for s in stages)
