@@ -49,8 +49,8 @@ services:
       dockerfile: Dockerfile
       args:
         GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-    ports:
-      - "8003:8001"
+    expose:
+      - "8001"
     env_file:
       - .env.demo
     depends_on:
