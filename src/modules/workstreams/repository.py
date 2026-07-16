@@ -1,18 +1,22 @@
 from typing import Any
 from uuid import UUID
 
+from coa_db_models.projects.models import Project
 from coa_db_models.workstreams.models import Workstream, WorkstreamCategory, WorkstreamStage, WorkstreamStatusLog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.base_repository import BaseRepository
 
-# Default stages seeded on every new workstream, in sequence order.
-DEFAULT_STAGES: list[tuple[str, int]] = [
-    ("ERP Select", 1),
-    ("Field Mapping", 2),
-    ("Validation", 3),
-    ("Migration", 4),
+# Default stages seeded on every new workstream: (name, sequence, weight).
+# Weights sum to 100. Applies to all connection methods (CSV and MCP).
+DEFAULT_STAGES: list[tuple[str, int, int]] = [
+    ("Upload Files", 1, 30),
+    ("Type Mapping", 2, 30),
+    ("Account Mapping: Low Confidence", 3, 10),
+    ("Account Mapping: Medium Confidence", 4, 10),
+    ("Account Mapping: Strong Confidence", 5, 10),
+    ("Preview & Export", 6, 10),
 ]
 
 
@@ -44,6 +48,18 @@ class WorkstreamRepository(BaseRepository[Workstream]):
             .where(Workstream.id == workstream_id)
         )
         return result.one_or_none()
+
+    async def get_with_project(self, workstream_id: UUID) -> tuple[Workstream, Project] | None:
+        """Return (Workstream, Project) for the context endpoint."""
+        result = await self.session.execute(
+            select(Workstream, Project)
+            .join(Project, Workstream.project_id == Project.id)
+            .where(Workstream.id == workstream_id)
+        )
+        row = result.one_or_none()
+        if row is None:
+            return None
+        return (row[0], row[1])
 
     async def next_display_seq(self, project_id: UUID, category_id: UUID) -> int:
         """Return the next sequence number for display_code generation.
@@ -89,19 +105,20 @@ class WorkstreamRepository(BaseRepository[Workstream]):
             name=name,
             display_code=display_code,
             status="not_started",
-            current_stage=DEFAULT_STAGES[0][0],
+            current_stage=DEFAULT_STAGES[0][0],  # "Upload Files"
             created_by=created_by,
         )
         self.session.add(workstream)
         await self.session.flush()
         await self.session.refresh(workstream)
 
-        for stage_name, seq in DEFAULT_STAGES:
+        for stage_name, seq, weight in DEFAULT_STAGES:
             self.session.add(
                 WorkstreamStage(
                     workstream_id=workstream.id,
                     name=stage_name,
                     sequence=seq,
+                    weight=weight,
                     is_completed=False,
                 )
             )

@@ -162,6 +162,7 @@ class ProjectOverviewResponse(BaseModel):
     source_deployment: str | None
     target_deployment: str | None
     last_edited_at: datetime
+    overall_progress: int
     groups: list[ProjectOverviewGroupItem]
 
 

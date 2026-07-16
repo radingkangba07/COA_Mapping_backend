@@ -17,6 +17,14 @@ class FileRepository(BaseRepository[File]):
         await self.session.refresh(file)
         return file
 
+    async def list_by_workstream(self, workstream_id: UUID) -> list[File]:
+        result = await self.session.execute(
+            select(File)
+            .where(File.workstream_id == workstream_id, File.is_active == True)  # noqa: E712
+            .order_by(File.created_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def list_by_project(
         self, project_id: UUID, file_type: str | None = None, include_deleted: bool = False
     ) -> list[File]:
