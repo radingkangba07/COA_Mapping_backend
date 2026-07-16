@@ -1,0 +1,77 @@
+# =============================================================================
+# COA Migration — Demo Environment Compose
+#
+# Host location: /opt/coa-migration/environments/demo/docker-compose.demo.yml
+#
+# The api-service is exposed on host port 8003 so it does not clash with
+# testing (8001) or staging (8002) on the same server.
+# Nginx on the host should proxy:
+#   /demo/api/  →  http://localhost:8003/api/
+# =============================================================================
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    env_file:
+      - .env.demo
+    volumes:
+      - demo_postgres_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coa-demo
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["--js", "--sd", "/data"]
+    volumes:
+      - demo_nats_data:/data
+    expose:
+      - "4222"
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coa-demo
+
+  api-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    expose:
+      - "8001"
+    env_file:
+      - .env.demo
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - coa-demo
+
+volumes:
+  demo_postgres_data:
+  demo_nats_data:
+
+networks:
+  coa-demo:
+    driver: bridge

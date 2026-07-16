@@ -49,6 +49,7 @@ class StorageService:
         org_slug: str = "default",
         uploaded_by: UUID | None = None,
         job_id: UUID | None = None,
+        workstream_id: UUID | None = None,
     ) -> File:
         await ensure_project_access(self.session, user_id, project_id, "editor")
         content_type = self._detect_content_type(filename)
@@ -77,6 +78,7 @@ class StorageService:
         file = await self.file_repo.create_file(
             project_id=project_id,
             job_id=job_id,
+            workstream_id=workstream_id,
             file_type=file_type,
             original_filename=filename,
             storage_path=storage_path,
