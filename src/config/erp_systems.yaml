@@ -21,7 +21,7 @@ connection_methods:
 vendors:
   acs:
     name: ACS (Pty) Ltd
-    products: [acs_accpac]
+    products: [embrace_erp]
   acumatica:
     name: Acumatica
     products: [acumatica_cloud_erp]
@@ -36,16 +36,16 @@ vendors:
     products: [certinia_erp]
   dassault:
     name: Dassault Systèmes
-    products: [dassault_3dx]
+    products: [delmiaworks]
   deltek:
     name: Deltek
-    products: [deltek_costpoint, deltek_vision]
+    products: [deltek_costpoint, deltek_vantagepoint]
   ecount:
     name: ECOUNT Co. Ltd.
     products: [ecount_erp]
   epicor:
     name: Epicor
-    products: [epicor_erp, epicor_kinetic]
+    products: [epicor_kinetic]
   frappe:
     name: Frappe Technologies
     products: [erpnext]
@@ -60,13 +60,13 @@ vendors:
     products: [hashmicro_erp]
   ibm:
     name: IBM
-    products: [ibm_maximo, ibm_cognos_controller]
+    products: [ibm_planning_analytics, ibm_maximo]
   ifs:
     name: IFS
     products: [ifs_cloud]
   infor:
     name: Infor
-    products: [infor_cloudsuite, infor_m3, infor_ln]
+    products: [infor_cloudsuite, infor_syteline, infor_m3, infor_ln]
   intuit:
     name: Intuit
     products: [quickbooks, quickbooks_desktop, quickbooks_enterprise]
@@ -75,7 +75,7 @@ vendors:
     products: [kerridge_k8]
   microsoft:
     name: Microsoft
-    products: [microsoft_dynamics, microsoft_business_central, microsoft_gp]
+    products: [microsoft_dynamics, microsoft_business_central, microsoft_gp, microsoft_dynamics_ax, microsoft_dynamics_nav, microsoft_dynamics_sl]
   odoo:
     name: Odoo
     products: [odoo, odoo_enterprise]
@@ -84,7 +84,7 @@ vendors:
     products: [openpro_erp]
   oracle:
     name: Oracle
-    products: [oracle_netsuite, oracle_jde, oracle_ebs, oracle_fusion]
+    products: [oracle_netsuite, oracle_jde, oracle_ebs, oracle_fusion, oracle_hyperion, oracle_peoplesoft]
   qad:
     name: QAD
     products: [qad_erp]
@@ -99,7 +99,7 @@ vendors:
     products: [rootstock_erp]
   sage:
     name: Sage
-    products: [sage, sage_300, sage_50, sage_x3, sage_200, pastel]
+    products: [sage, sage_300, sage_50, sage_100, sage_200, sage_200_evolution, sage_500, sage_x3, sage_accounting, pastel, sage_pastel_xpress, sage_pastel_payroll]
   sap:
     name: SAP
     products: [sap, sap_business_one, sap_byd, sap_ecc]
@@ -117,13 +117,13 @@ vendors:
     products: [wave_accounting]
   workday:
     name: Workday
-    products: [workday_financial]
+    products: [workday_financial, workday_adaptive_planning]
   xero:
     name: Xero
     products: [xero]
   zoho:
     name: Zoho Corporation
-    products: [zoho]
+    products: [zoho, zoho_erp]
 
 # ── ERP product catalogue ─────────────────────────────────────────────────────
 
@@ -132,13 +132,13 @@ sap:
   name: SAP S/4HANA
   vendor_id: sap
   vendor_name: SAP
-  connection_methods: [on_premise, mcp_server, csv_file]
+  connection_methods: [cloud_saas, on_premise, mcp_server, csv_file]
 
 sap_business_one:
   name: SAP Business One
   vendor_id: sap
   vendor_name: SAP
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 sap_byd:
   name: SAP Business ByDesign
@@ -147,51 +147,81 @@ sap_byd:
   connection_methods: [cloud_saas, csv_file]
 
 sap_ecc:
-  name: SAP ECC (ERP Central Component)
+  name: SAP ECC 6.0
   vendor_id: sap
   vendor_name: SAP
   connection_methods: [on_premise, csv_file]
 
 # Oracle
 oracle_netsuite:
-  name: Oracle NetSuite
+  name: NetSuite ERP
   vendor_id: oracle
   vendor_name: Oracle
   connection_methods: [cloud_saas, mcp_server, csv_file]
 
 oracle_jde:
-  name: Oracle JD Edwards EnterpriseOne
+  name: JD Edwards EnterpriseOne
   vendor_id: oracle
   vendor_name: Oracle
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 oracle_ebs:
-  name: Oracle E-Business Suite
+  name: Oracle E-Business Suite (EBS)
   vendor_id: oracle
   vendor_name: Oracle
   connection_methods: [on_premise, csv_file]
 
 oracle_fusion:
-  name: Oracle Fusion Cloud ERP
+  name: Oracle ERP Cloud (Fusion)
   vendor_id: oracle
   vendor_name: Oracle
   connection_methods: [cloud_saas, csv_file]
 
+oracle_hyperion:
+  name: Oracle Hyperion
+  vendor_id: oracle
+  vendor_name: Oracle
+  connection_methods: [cloud_saas, on_premise, csv_file]
+
+oracle_peoplesoft:
+  name: Oracle PeopleSoft
+  vendor_id: oracle
+  vendor_name: Oracle
+  connection_methods: [on_premise, csv_file]
+
 # Microsoft
 microsoft_dynamics:
-  name: Microsoft Dynamics 365 Finance
+  name: Dynamics 365 Finance & Supply Chain
   vendor_id: microsoft
   vendor_name: Microsoft
-  connection_methods: [cloud_saas, on_premise, mcp_server, csv_file]
+  connection_methods: [cloud_saas, mcp_server, csv_file]
 
 microsoft_business_central:
-  name: Microsoft Dynamics 365 Business Central
+  name: Dynamics 365 Business Central
   vendor_id: microsoft
   vendor_name: Microsoft
-  connection_methods: [cloud_saas, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 microsoft_gp:
-  name: Microsoft Dynamics GP
+  name: Dynamics GP
+  vendor_id: microsoft
+  vendor_name: Microsoft
+  connection_methods: [on_premise, csv_file]
+
+microsoft_dynamics_ax:
+  name: Dynamics AX (2012 and prior)
+  vendor_id: microsoft
+  vendor_name: Microsoft
+  connection_methods: [on_premise, csv_file]
+
+microsoft_dynamics_nav:
+  name: Dynamics NAV (2018 and prior)
+  vendor_id: microsoft
+  vendor_name: Microsoft
+  connection_methods: [on_premise, csv_file]
+
+microsoft_dynamics_sl:
+  name: Dynamics SL
   vendor_id: microsoft
   vendor_name: Microsoft
   connection_methods: [on_premise, csv_file]
@@ -223,13 +253,37 @@ sage:
   connection_methods: [cloud_saas, mcp_server, csv_file]
 
 sage_300:
-  name: Sage 300cloud
+  name: Sage 300
   vendor_id: sage
   vendor_name: Sage
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 sage_50:
-  name: Sage 50cloud
+  name: Sage 50
+  vendor_id: sage
+  vendor_name: Sage
+  connection_methods: [cloud_saas, on_premise, csv_file]
+
+sage_100:
+  name: Sage 100
+  vendor_id: sage
+  vendor_name: Sage
+  connection_methods: [cloud_saas, on_premise, csv_file]
+
+sage_200:
+  name: Sage 200
+  vendor_id: sage
+  vendor_name: Sage
+  connection_methods: [cloud_saas, on_premise, csv_file]
+
+sage_200_evolution:
+  name: Sage 200 Evolution
+  vendor_id: sage
+  vendor_name: Sage
+  connection_methods: [cloud_saas, on_premise, csv_file]
+
+sage_500:
+  name: Sage 500
   vendor_id: sage
   vendor_name: Sage
   connection_methods: [on_premise, csv_file]
@@ -240,17 +294,29 @@ sage_x3:
   vendor_name: Sage
   connection_methods: [cloud_saas, on_premise, csv_file]
 
-sage_200:
-  name: Sage 200
+sage_accounting:
+  name: Sage Accounting (Business Cloud)
   vendor_id: sage
   vendor_name: Sage
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, csv_file]
 
 pastel:
-  name: Sage Pastel (Sage 50 Africa)
+  name: Sage 50cloud Pastel Partner
   vendor_id: sage
   vendor_name: Sage
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
+
+sage_pastel_xpress:
+  name: Sage 50cloud Pastel Xpress
+  vendor_id: sage
+  vendor_name: Sage
+  connection_methods: [cloud_saas, on_premise, csv_file]
+
+sage_pastel_payroll:
+  name: Sage Pastel Payroll & HR
+  vendor_id: sage
+  vendor_name: Sage
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # Xero
 xero:
@@ -279,6 +345,12 @@ zoho:
   vendor_name: Zoho Corporation
   connection_methods: [cloud_saas, csv_file]
 
+zoho_erp:
+  name: Zoho ERP (Zoho One)
+  vendor_id: zoho
+  vendor_name: Zoho Corporation
+  connection_methods: [cloud_saas, csv_file]
+
 # Workday
 workday_financial:
   name: Workday Financial Management
@@ -286,44 +358,50 @@ workday_financial:
   vendor_name: Workday
   connection_methods: [cloud_saas, csv_file]
 
-# Infor
-infor_cloudsuite:
-  name: Infor CloudSuite Financials
-  vendor_id: infor
-  vendor_name: Infor
+workday_adaptive_planning:
+  name: Workday Adaptive Planning
+  vendor_id: workday
+  vendor_name: Workday
   connection_methods: [cloud_saas, csv_file]
 
+# Infor
+infor_cloudsuite:
+  name: Infor CloudSuite Financials (S3)
+  vendor_id: infor
+  vendor_name: Infor
+  connection_methods: [cloud_saas, on_premise, csv_file]
+
+infor_syteline:
+  name: Infor CloudSuite Industrial (SyteLine)
+  vendor_id: infor
+  vendor_name: Infor
+  connection_methods: [cloud_saas, on_premise, csv_file]
+
 infor_m3:
-  name: Infor M3
+  name: Infor CloudSuite (M3)
   vendor_id: infor
   vendor_name: Infor
   connection_methods: [cloud_saas, on_premise, csv_file]
 
 infor_ln:
-  name: Infor LN
+  name: Infor CloudSuite (LN)
   vendor_id: infor
   vendor_name: Infor
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # Epicor
-epicor_erp:
-  name: Epicor ERP
-  vendor_id: epicor
-  vendor_name: Epicor
-  connection_methods: [on_premise, csv_file]
-
 epicor_kinetic:
   name: Epicor Kinetic
   vendor_id: epicor
   vendor_name: Epicor
-  connection_methods: [cloud_saas, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # SYSPRO
 syspro_erp:
   name: SYSPRO ERP
   vendor_id: syspro
   vendor_name: SYSPRO
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # IFS
 ifs_cloud:
@@ -346,17 +424,17 @@ unit4_financials:
   connection_methods: [cloud_saas, csv_file]
 
 # IBM
+ibm_planning_analytics:
+  name: IBM Planning Analytics
+  vendor_id: ibm
+  vendor_name: IBM
+  connection_methods: [cloud_saas, on_premise, csv_file]
+
 ibm_maximo:
   name: IBM Maximo Application Suite
   vendor_id: ibm
   vendor_name: IBM
   connection_methods: [cloud_saas, on_premise, csv_file]
-
-ibm_cognos_controller:
-  name: IBM Cognos Controller
-  vendor_id: ibm
-  vendor_name: IBM
-  connection_methods: [on_premise, csv_file]
 
 # Deltek
 deltek_costpoint:
@@ -365,18 +443,18 @@ deltek_costpoint:
   vendor_name: Deltek
   connection_methods: [cloud_saas, on_premise, csv_file]
 
-deltek_vision:
-  name: Deltek Vision
+deltek_vantagepoint:
+  name: Deltek Vantagepoint
   vendor_id: deltek
   vendor_name: Deltek
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # Acumatica
 acumatica_cloud_erp:
   name: Acumatica Cloud ERP
   vendor_id: acumatica
   vendor_name: Acumatica
-  connection_methods: [cloud_saas, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # Frappe / ERPNext
 erpnext:
@@ -401,10 +479,10 @@ wave_accounting:
 
 # QAD
 qad_erp:
-  name: QAD ERP
+  name: QAD Adaptive ERP
   vendor_id: qad
   vendor_name: QAD
-  connection_methods: [cloud_saas, on_premise, csv_file]
+  connection_methods: [cloud_saas, csv_file]
 
 # Ramco
 ramco_erp:
@@ -418,18 +496,18 @@ tallyprime:
   name: TallyPrime
   vendor_id: tally
   vendor_name: Tally Solutions
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # Rootstock
 rootstock_erp:
-  name: Rootstock Cloud ERP (Salesforce)
+  name: Rootstock Cloud ERP
   vendor_id: rootstock
   vendor_name: Rootstock (Salesforce)
   connection_methods: [cloud_saas, csv_file]
 
 # Plex / Rockwell
 plex_manufacturing:
-  name: Plex Manufacturing Cloud
+  name: Plex Smart Manufacturing Platform
   vendor_id: rockwell
   vendor_name: Rockwell Automation
   connection_methods: [cloud_saas, csv_file]
@@ -439,21 +517,21 @@ aptean_erp:
   name: Aptean ERP
   vendor_id: aptean
   vendor_name: Aptean
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # Certinia
 certinia_erp:
-  name: Certinia ERP Cloud (Salesforce)
+  name: Certinia ERP
   vendor_id: certinia
   vendor_name: Certinia
   connection_methods: [cloud_saas, csv_file]
 
 # Dassault
-dassault_3dx:
-  name: Dassault 3DEXPERIENCE Finance
+delmiaworks:
+  name: DELMIAworks
   vendor_id: dassault
   vendor_name: Dassault Systèmes
-  connection_methods: [cloud_saas, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # ECOUNT
 ecount_erp:
@@ -467,28 +545,28 @@ genius_erp:
   name: Genius ERP
   vendor_id: genius
   vendor_name: Genius Solutions
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # HashMicro
 hashmicro_erp:
   name: HashMicro ERP
   vendor_id: hashmicro
   vendor_name: HashMicro
-  connection_methods: [cloud_saas, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # Kerridge
 kerridge_k8:
-  name: Kerridge K8
+  name: Kerridge K8 / KCS
   vendor_id: kerridge
   vendor_name: Kerridge Commercial Systems
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
-# ACS / ACCPAC
-acs_accpac:
-  name: ACCPAC (Sage 300 Africa)
+# ACS
+embrace_erp:
+  name: Embrace ERP
   vendor_id: acs
   vendor_name: ACS (Pty) Ltd
-  connection_methods: [on_premise, csv_file]
+  connection_methods: [cloud_saas, on_premise, csv_file]
 
 # Anaplan
 anaplan:

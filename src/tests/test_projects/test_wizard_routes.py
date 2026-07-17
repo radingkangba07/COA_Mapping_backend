@@ -199,13 +199,13 @@ async def test_wizard_create_unknown_source_product_returns_422(
 async def test_wizard_create_incompatible_connection_method_returns_422(
     authenticated_client: AsyncClient, seed_user: dict[str, Any]
 ):
-    """SAP does not support cloud_saas — the compatibility check must reject with 422."""
+    """SAP ECC 6.0 is on-premise only — cloud_saas must be rejected with 422."""
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json=_create_payload(
             seed_user["org_id"],
             source_vendor_id="sap",
-            source_product_id="sap",
+            source_product_id="sap_ecc",
             source_connection_method_id="cloud_saas",
         ),
     )
