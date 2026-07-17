@@ -12,6 +12,7 @@ from src.core.exceptions import NotFoundError
 from src.modules.erp.dependencies import get_erp_service
 from src.modules.erp.schemas import (
     AccountTypesResponse,
+    CatalogueVendor,
     CompatibilityResult,
     ERPSystem,
     SampleDataResponse,
@@ -47,6 +48,18 @@ async def compatibility_check(
     result = CompatibilityResult(is_compatible=is_compatible, message=message)
     _compat_cache[cache_key] = (time.monotonic(), result)
     return result
+
+
+# ── Catalogue endpoint (single call: vendor → product → connection method) ────
+
+
+@router.get("/catalogue/vendors", response_model=list[CatalogueVendor])
+async def catalogue_vendors(service: ERPConfigService = Depends(get_erp_service)) -> list[CatalogueVendor]:
+    try:
+        return [CatalogueVendor(**v) for v in service.get_catalogue_vendors()]
+    except Exception:
+        logger.exception("Failed to list catalogue vendors")
+        return JSONResponse(status_code=500, content={"detail": "Failed to load vendors"})  # type: ignore[return-value]
 
 
 # ── ERP product endpoints ─────────────────────────────────────────────────────

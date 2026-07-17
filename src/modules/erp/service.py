@@ -12,6 +12,7 @@ _RESERVED = {"vendors", "connection_methods"}
 class ERPConfigService:
     def __init__(self, systems_path: Path):
         raw: dict = yaml.safe_load(systems_path.read_text())
+        self._vendors: dict = raw.get("vendors", {})
         self._connection_methods: dict = raw.get("connection_methods", {})
         self.systems: dict = {k: v for k, v in raw.items() if k not in _RESERVED}
 
@@ -39,6 +40,24 @@ class ERPConfigService:
         if connection_method_id not in self._connection_methods:
             return None
         return {"id": connection_method_id, **self._connection_methods[connection_method_id]}
+
+    def get_catalogue_vendors(self) -> list[dict]:
+        """Full vendor → product → connection method tree (single API call)."""
+        result = []
+        for vendor_id, vendor in self._vendors.items():
+            products = []
+            for pid in vendor.get("products", []):
+                system = self.systems.get(pid)
+                if not system:
+                    continue
+                methods = [
+                    {"id": mid, **self._connection_methods[mid]}
+                    for mid in system.get("connection_methods", [])
+                    if mid in self._connection_methods
+                ]
+                products.append({"id": pid, "product_name": system.get("name", pid), "connection_methods": methods})
+            result.append({"vendor": vendor.get("name", vendor_id), "products": products})
+        return result
 
 
 async def check_compatibility_db(
