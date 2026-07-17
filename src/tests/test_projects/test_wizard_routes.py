@@ -523,10 +523,6 @@ async def test_list_projects_unauthenticated_returns_401(test_client: AsyncClien
     assert resp.status_code == 401
 
 
-
-
-
-
 async def test_get_all_erp_systems_returns_full_catalogue(test_client: AsyncClient):
     resp = await test_client.get("/api/v1/erp-systems")
     assert resp.status_code == 200
