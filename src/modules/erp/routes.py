@@ -3,20 +3,17 @@ import logging
 import time
 
 import pandas as pd
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db
-from src.core.exceptions import NotFoundError, ValidationError
+from src.core.exceptions import NotFoundError
 from src.modules.erp.dependencies import get_erp_service
 from src.modules.erp.schemas import (
     AccountTypesResponse,
-    CatalogueVendor,
     CompatibilityResult,
-    ConnectionMethod,
     ERPSystem,
-    ERPVendor,
     SampleDataResponse,
 )
 from src.modules.erp.service import ERPConfigService, check_compatibility_db
@@ -28,14 +25,6 @@ legacy_erp_router = APIRouter(prefix="/api/v1", tags=["erp"], include_in_schema=
 
 _compat_cache: dict[tuple[str, str, str], tuple[float, CompatibilityResult]] = {}
 _COMPAT_TTL = 300.0
-
-_CM_LABELS: dict[str, str] = {
-    "csv_file": "CSV File Upload",
-    "mcp_server": "MCP Server (Model Context Protocol)",
-    "cloud_saas": "Cloud (SaaS)",
-    "on_premise": "On-Premise",
-}
-_CM_REQUIRES_MCP: set[str] = {"mcp_server"}
 
 
 # ── Compatibility check (declared before /{erp_id} to avoid route shadowing) ─
@@ -58,90 +47,6 @@ async def compatibility_check(
     result = CompatibilityResult(is_compatible=is_compatible, message=message)
     _compat_cache[cache_key] = (time.monotonic(), result)
     return result
-
-
-# ── Vendor endpoints (must be declared before /{erp_id}) ─────────────────────
-
-
-@router.get("/vendors", response_model=list[ERPVendor])
-async def list_vendors(service: ERPConfigService = Depends(get_erp_service)):
-    try:
-        return [ERPVendor(**v) for v in service.get_vendors()]
-    except Exception:
-        logger.exception("Failed to list ERP vendors")
-        return JSONResponse(status_code=500, content={"detail": "Failed to load vendors"})
-
-
-@router.get("/vendors/search", response_model=list[ERPVendor])
-async def search_vendors(
-    q: str = Query(..., min_length=2, description="Partial vendor name, minimum 2 characters"),
-    service: ERPConfigService = Depends(get_erp_service),
-):
-    try:
-        return [ERPVendor(**v) for v in service.search_vendors(q)]
-    except ValidationError:
-        raise
-    except Exception:
-        logger.exception("Failed to search vendors with query '%s'", q)
-        return JSONResponse(status_code=500, content={"detail": "Vendor search failed"})
-
-
-@router.get("/vendors/{vendor_id}/products", response_model=list[ERPSystem])
-async def list_vendor_products(vendor_id: str, service: ERPConfigService = Depends(get_erp_service)):
-    try:
-        vendor = service.get_vendor(vendor_id)
-        if not vendor:
-            raise NotFoundError(f"Vendor '{vendor_id}' not found")
-        products = service.get_products_for_vendor(vendor_id)
-        return [
-            ERPSystem(id=p["id"], name=p["name"], **{k: v for k, v in p.items() if k not in ("id", "name")})
-            for p in products
-        ]
-    except NotFoundError:
-        raise
-    except Exception:
-        logger.exception("Failed to list products for vendor '%s'", vendor_id)
-        return JSONResponse(status_code=500, content={"detail": "Failed to load vendor products"})
-
-
-@router.get("/products", response_model=list[ERPSystem])
-async def list_products(
-    vendor_id: str | None = Query(default=None, description="Filter products by vendor ID"),
-    service: ERPConfigService = Depends(get_erp_service),
-):
-    try:
-        products = service.get_products(vendor_id=vendor_id)
-        return [
-            ERPSystem(id=p["id"], name=p["name"], **{k: v for k, v in p.items() if k not in ("id", "name")})
-            for p in products
-        ]
-    except Exception:
-        logger.exception("Failed to list products")
-        return JSONResponse(status_code=500, content={"detail": "Failed to load products"})
-
-
-# ── Connection methods (static list) ─────────────────────────────────────────
-
-
-@router.get("/connection-methods", response_model=list[ConnectionMethod])
-async def list_connection_methods(service: ERPConfigService = Depends(get_erp_service)):
-    try:
-        return [ConnectionMethod(**m) for m in service.get_all_connection_methods()]
-    except Exception:
-        logger.exception("Failed to list connection methods")
-        return JSONResponse(status_code=500, content={"detail": "Failed to load connection methods"})
-
-
-# ── Catalogue endpoint (single call: vendor → product → connection method) ────
-
-
-@router.get("/catalogue/vendors", response_model=list[CatalogueVendor])
-async def catalogue_vendors(service: ERPConfigService = Depends(get_erp_service)) -> list[CatalogueVendor]:
-    try:
-        return [CatalogueVendor(**v) for v in service.get_catalogue_vendors()]
-    except Exception:
-        logger.exception("Failed to list catalogue vendors")
-        return JSONResponse(status_code=500, content={"detail": "Failed to load vendors"})  # type: ignore[return-value]
 
 
 # ── ERP product endpoints ─────────────────────────────────────────────────────
@@ -180,18 +85,6 @@ async def get_erp_system(erp_id: str, service: ERPConfigService = Depends(get_er
     except Exception:
         logger.exception("Failed to get ERP system '%s'", erp_id)
         return JSONResponse(status_code=500, content={"detail": "Failed to load ERP system"})
-
-
-@router.get("/{erp_id}/connection-methods", response_model=list[ConnectionMethod])
-async def get_erp_connection_methods(erp_id: str, service: ERPConfigService = Depends(get_erp_service)):
-    try:
-        system = service.get_system(erp_id)
-        if not system:
-            return []
-        return [ConnectionMethod(**m) for m in service.get_connection_methods_for_erp(erp_id)]
-    except Exception:
-        logger.exception("Failed to get connection methods for '%s'", erp_id)
-        return JSONResponse(status_code=500, content={"detail": "Failed to load connection methods"})
 
 
 @router.get("/{erp_id}/account-types", response_model=AccountTypesResponse)

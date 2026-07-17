@@ -1,6 +1,5 @@
-import time
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import yaml
 from coa_db_models.erp.models import ErpCompatibilityRule
@@ -8,36 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _RESERVED = {"vendors", "connection_methods"}
-_CACHE_TTL = 600  # seconds; applied to all ERP list responses (DAB-7)
 
 
 class ERPConfigService:
     def __init__(self, systems_path: Path):
         raw: dict = yaml.safe_load(systems_path.read_text())
-        self._vendors: dict = raw.get("vendors", {})
-        self._connection_methods: dict = raw.get("connection_methods", {})
         self.systems: dict = {k: v for k, v in raw.items() if k not in _RESERVED}
-        self._cache: dict[str, tuple[float, Any]] = {}
-
-    def _get_cached(self, key: str, compute: Any) -> Any:
-        entry = self._cache.get(key)
-        if entry and time.monotonic() - entry[0] < _CACHE_TTL:
-            return entry[1]
-        result = compute()
-        self._cache[key] = (time.monotonic(), result)
-        return result
-
-    # ── ERP products ──────────────────────────────────────────────────────────
 
     def get_all_systems(self) -> list[dict]:
         return [{"id": key, **value} for key, value in self.systems.items()]
-
-    def get_products(self, vendor_id: str | None = None) -> list[dict]:
-        """Return all products, optionally filtered by vendor. TTL-cached per filter key."""
-        cache_key = f"erp:products:{vendor_id or 'all'}"
-        if vendor_id:
-            return cast(list[dict], self._get_cached(cache_key, lambda: self.get_products_for_vendor(vendor_id)))
-        return cast(list[dict], self._get_cached(cache_key, self.get_all_systems))
 
     def get_system(self, erp_id: str) -> dict | None:
         if erp_id not in self.systems:
@@ -55,81 +33,6 @@ class ERPConfigService:
         if not system:
             return []
         return cast(list[dict], system.get("sample_data", []))
-
-    # ── Vendors ───────────────────────────────────────────────────────────────
-
-    def get_vendors(self) -> list[dict]:
-        return [{"id": key, **value} for key, value in self._vendors.items()]
-
-    def get_vendor(self, vendor_id: str) -> dict | None:
-        if vendor_id not in self._vendors:
-            return None
-        return {"id": vendor_id, **self._vendors[vendor_id]}
-
-    def get_products_for_vendor(self, vendor_id: str) -> list[dict]:
-        vendor = self._vendors.get(vendor_id)
-        if not vendor:
-            return []
-        product_ids: list[str] = vendor.get("products", [])
-        return [{"id": pid, **self.systems[pid]} for pid in product_ids if pid in self.systems]
-
-    def search_vendors(self, q: str, max_results: int = 20) -> list[dict]:
-        """Partial name match across vendors. TTL-cached per lowercase query string."""
-        cache_key = f"erp:vendors:search:{q.lower()}"
-        return cast(
-            list[dict],
-            self._get_cached(
-                cache_key,
-                lambda: [
-                    {"id": key, **value}
-                    for key, value in self._vendors.items()
-                    if q.lower() in value.get("name", "").lower()
-                ][:max_results],
-            ),
-        )
-
-    # ── Connection methods ────────────────────────────────────────────────────
-
-    def get_all_connection_methods(self) -> list[dict]:
-        return cast(
-            list[dict],
-            self._get_cached(
-                "erp:connection_methods",
-                lambda: [{"id": key, **value} for key, value in self._connection_methods.items()],
-            ),
-        )
-
-    def get_connection_method(self, connection_method_id: str) -> dict | None:
-        if connection_method_id not in self._connection_methods:
-            return None
-        return {"id": connection_method_id, **self._connection_methods[connection_method_id]}
-
-    def get_connection_methods_for_erp(self, erp_id: str) -> list[dict]:
-        system = self.systems.get(erp_id)
-        if not system:
-            return []
-        method_ids: list[str] = system.get("connection_methods", [])
-        return [{"id": mid, **self._connection_methods[mid]} for mid in method_ids if mid in self._connection_methods]
-
-    # ── Cascade helpers (vendor → product → method) ────────────────────────
-
-    def get_catalogue_vendors(self) -> list[dict]:
-        """Full vendor → product → connection method tree from YAML (single call)."""
-        result = []
-        for vendor_id, vendor in self._vendors.items():
-            products = []
-            for pid in vendor.get("products", []):
-                system = self.systems.get(pid)
-                if not system:
-                    continue
-                methods = [
-                    {"id": mid, **self._connection_methods[mid]}
-                    for mid in system.get("connection_methods", [])
-                    if mid in self._connection_methods
-                ]
-                products.append({"id": pid, "product_name": system.get("name", pid), "connection_methods": methods})
-            result.append({"vendor": vendor.get("name", vendor_id), "products": products})
-        return result
 
 
 async def check_compatibility_db(
