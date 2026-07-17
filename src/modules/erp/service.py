@@ -12,6 +12,7 @@ _RESERVED = {"vendors", "connection_methods"}
 class ERPConfigService:
     def __init__(self, systems_path: Path):
         raw: dict = yaml.safe_load(systems_path.read_text())
+        self._connection_methods: dict = raw.get("connection_methods", {})
         self.systems: dict = {k: v for k, v in raw.items() if k not in _RESERVED}
 
     def get_all_systems(self) -> list[dict]:
@@ -33,6 +34,11 @@ class ERPConfigService:
         if not system:
             return []
         return cast(list[dict], system.get("sample_data", []))
+
+    def get_connection_method(self, connection_method_id: str) -> dict | None:
+        if connection_method_id not in self._connection_methods:
+            return None
+        return {"id": connection_method_id, **self._connection_methods[connection_method_id]}
 
 
 async def check_compatibility_db(
