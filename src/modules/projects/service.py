@@ -146,15 +146,13 @@ class ProjectService:
 
         erp_service = get_erp_service()
 
-        # 1. Validate ERP FK references against YAML catalogue
-        if data.source_vendor_id and not erp_service.get_vendor(data.source_vendor_id):
-            raise ValidationError(f"Unknown source vendor: '{data.source_vendor_id}'")
-        if data.target_vendor_id and not erp_service.get_vendor(data.target_vendor_id):
-            raise ValidationError(f"Unknown target vendor: '{data.target_vendor_id}'")
-        if data.source_product_id and not erp_service.get_system(data.source_product_id):
-            raise ValidationError(f"Unknown source product: '{data.source_product_id}'")
-        if data.target_product_id and not erp_service.get_system(data.target_product_id):
-            raise ValidationError(f"Unknown target product: '{data.target_product_id}'")
+        # 1. Validate ERP product references against YAML catalogue
+        src_pid = data.source_product_id
+        if src_pid and not erp_service.get_system(src_pid):
+            raise ValidationError(f"Unknown source product: '{src_pid}'")
+        tgt_pid = data.target_product_id
+        if tgt_pid and not erp_service.get_system(tgt_pid):
+            raise ValidationError(f"Unknown target product: '{tgt_pid}'")
 
         # 2. In-memory compatibility check (action=create only)
         if (
@@ -295,7 +293,7 @@ class ProjectService:
                     member.email,
                 )
 
-        # 10. Single commit — all sections or nothing
+        # 11. Single commit — all sections or nothing
         await self.session.commit()
         logger.info("Project '%s' (full wizard) created by user %s", project.name, user.id)
         return project
@@ -530,8 +528,7 @@ class ProjectService:
                 groups_map[slug] = {"key": slug, "title": row.category_name, "workstreams": []}
                 groups_order.append(slug)
 
-            total, completed = stage_counts.get(ws.id, (0, 0))
-            progress = round((completed / total) * 100) if total > 0 else 0
+            progress = stage_counts.get(ws.id, 0)
 
             groups_map[slug]["workstreams"].append(
                 ProjectOverviewWorkstreamItem(
@@ -547,6 +544,11 @@ class ProjectService:
 
         groups = [ProjectOverviewGroupItem(**groups_map[k]) for k in groups_order]
 
+        # Overall progress = average of all included workstream progresses.
+        # Dynamically computed so additional workstreams are reflected automatically.
+        all_progresses = [ws_item.progress for g in groups for ws_item in g.workstreams]
+        overall_progress = round(sum(all_progresses) / len(all_progresses)) if all_progresses else 0
+
         return ProjectOverviewResponse(
             id=project.id,
             name=project.name,
@@ -557,6 +559,7 @@ class ProjectService:
             source_deployment=None,
             target_deployment=None,
             last_edited_at=project.updated_at,
+            overall_progress=overall_progress,
             groups=groups,
         )
 

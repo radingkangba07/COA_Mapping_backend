@@ -54,11 +54,18 @@ async def test_list_stages(authenticated_client: AsyncClient, seed_user: dict[st
     resp = await authenticated_client.get(f"/api/v1/workstreams/{ws_id}/stages")
     assert resp.status_code == 200
     stages = resp.json()
-    assert len(stages) == 4
+    assert len(stages) == 6
     sequences = [s["sequence"] for s in stages]
-    assert sequences == [1, 2, 3, 4]
+    assert sequences == [1, 2, 3, 4, 5, 6]
     names = [s["name"] for s in stages]
-    assert names == ["ERP Select", "Field Mapping", "Validation", "Migration"]
+    assert names == [
+        "Upload Files",
+        "Type Mapping",
+        "Account Mapping: Low Confidence",
+        "Account Mapping: Medium Confidence",
+        "Account Mapping: Strong Confidence",
+        "Preview & Export",
+    ]
     assert all(not s["is_completed"] for s in stages)
 
 
@@ -92,14 +99,14 @@ async def test_complete_stage_updates_current_stage(authenticated_client: AsyncC
 
 
 @pytest.mark.asyncio
-async def test_complete_out_of_order_returns_422(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+async def test_complete_out_of_order_is_allowed(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
     _, ws_id = await _setup_workstream(authenticated_client, seed_user)
     stages = (await authenticated_client.get(f"/api/v1/workstreams/{ws_id}/stages")).json()
 
-    # Try to complete second stage before first
+    # Stages can be completed in any order — no ordering enforcement at this layer.
     resp = await authenticated_client.patch(f"/api/v1/workstreams/{ws_id}/stages/{stages[1]['id']}/complete")
-    assert resp.status_code == 422
-    assert "Previous stage" in resp.json()["detail"]
+    assert resp.status_code == 200
+    assert resp.json()["is_completed"] is True
 
 
 @pytest.mark.asyncio

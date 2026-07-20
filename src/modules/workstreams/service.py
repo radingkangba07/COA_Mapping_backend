@@ -2,7 +2,8 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from coa_db_models.auth.models import User
-from coa_db_models.workstreams.models import Workstream, WorkstreamStatusLog
+from coa_db_models.workstreams.models import Workstream, WorkstreamStage, WorkstreamStatusLog
+from sqlalchemy import select
 
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.modules.workstreams.repository import (
@@ -84,9 +85,47 @@ class WorkstreamService:
 
         if data.name is not None:
             workstream.name = data.name
-            await self.session.flush()
-            await self.session.commit()
-            await self.session.refresh(workstream)
+
+        # When the frontend advances to a new stage, auto-complete all stages that are
+        # being skipped over (handles jumps like Low Confidence → Preview & Export).
+        if data.current_stage is not None and data.current_stage != workstream.current_stage:
+            stages_result = await self.session.execute(
+                select(WorkstreamStage)
+                .where(WorkstreamStage.workstream_id == workstream_id)
+                .order_by(WorkstreamStage.sequence)
+            )
+            all_stages = list(stages_result.scalars())
+
+            current_seq = next((s.sequence for s in all_stages if s.name == workstream.current_stage), 0)
+            target_seq = next((s.sequence for s in all_stages if s.name == data.current_stage), current_seq)
+
+            now = datetime.now(UTC)
+            for stage in all_stages:
+                if current_seq <= stage.sequence < target_seq and not stage.is_completed:
+                    stage.is_completed = True
+                    stage.completed_at = now
+
+            workstream.current_stage = data.current_stage
+
+            # Transition status to in_progress on first stage advance.
+            if workstream.status == "not_started":
+                workstream.status = "in_progress"
+
+        # Allow the frontend to force-complete a workstream (mark all stages done).
+        if data.status == "completed":
+            remaining_result = await self.session.execute(
+                select(WorkstreamStage).where(WorkstreamStage.workstream_id == workstream_id)
+            )
+            now = datetime.now(UTC)
+            for stage in remaining_result.scalars():
+                if not stage.is_completed:
+                    stage.is_completed = True
+                    stage.completed_at = now
+            workstream.status = "completed"
+
+        await self.session.flush()
+        await self.session.commit()
+        await self.session.refresh(workstream)
 
         return _to_response(workstream, category_name)
 
@@ -164,13 +203,6 @@ class StageService:
                 completed_at=stage.completed_at,
                 completed_by=stage.completed_by,
             )
-
-        # Enforce sequential completion
-        if stage.sequence > 1:
-            all_stages = await self.stage_repo.list_by_workstream(workstream_id)
-            prior_incomplete = [s for s in all_stages if s.sequence < stage.sequence and not s.is_completed]
-            if prior_incomplete:
-                raise ValidationError("Previous stage not yet completed")
 
         now = datetime.now(UTC)
         stage.is_completed = True

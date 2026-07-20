@@ -11,6 +11,8 @@ class WorkstreamCreate(BaseModel):
 
 class WorkstreamUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
+    current_stage: str | None = None
+    status: str | None = None
 
 
 class WorkstreamResponse(BaseModel):

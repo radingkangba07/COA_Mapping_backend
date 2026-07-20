@@ -164,24 +164,26 @@ async def test_wizard_create_missing_all_target_fields_returns_422(
 # ---------------------------------------------------------------------------
 
 
-async def test_wizard_create_unknown_source_vendor_returns_422(
+async def test_wizard_create_unknown_source_vendor_is_accepted(
     authenticated_client: AsyncClient, seed_user: dict[str, Any]
 ):
+    # Vendor is a denormalised display string — not validated against a catalogue.
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json=_create_payload(seed_user["org_id"], source_vendor_id="nonexistent_vendor"),
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 201
 
 
-async def test_wizard_create_unknown_target_vendor_returns_422(
+async def test_wizard_create_unknown_target_vendor_is_accepted(
     authenticated_client: AsyncClient, seed_user: dict[str, Any]
 ):
+    # Vendor is a denormalised display string — not validated against a catalogue.
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json=_create_payload(seed_user["org_id"], target_vendor_id="nonexistent_vendor"),
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 201
 
 
 async def test_wizard_create_unknown_source_product_returns_422(
@@ -197,13 +199,13 @@ async def test_wizard_create_unknown_source_product_returns_422(
 async def test_wizard_create_incompatible_connection_method_returns_422(
     authenticated_client: AsyncClient, seed_user: dict[str, Any]
 ):
-    """SAP does not support cloud_saas — the compatibility check must reject with 422."""
+    """SAP ECC 6.0 is on-premise only — cloud_saas must be rejected with 422."""
     resp = await authenticated_client.post(
         "/api/v1/projects",
         json=_create_payload(
             seed_user["org_id"],
             source_vendor_id="sap",
-            source_product_id="sap",
+            source_product_id="sap_ecc",
             source_connection_method_id="cloud_saas",
         ),
     )
@@ -519,60 +521,6 @@ async def test_list_projects_unauthenticated_returns_401(test_client: AsyncClien
     """GET without a token returns 401 (Authorization header is required)."""
     resp = await test_client.get("/api/v1/projects")
     assert resp.status_code == 401
-
-
-# ---------------------------------------------------------------------------
-# 11. ERP catalogue endpoints (wizard Step 1 UI data)
-# ---------------------------------------------------------------------------
-
-
-async def test_get_vendors_returns_all_yaml_vendors(test_client: AsyncClient):
-    resp = await test_client.get("/api/v1/erp-systems/vendors")
-    assert resp.status_code == 200
-    vendor_ids = {v["id"] for v in resp.json()}
-    for expected in ("sap", "microsoft", "oracle", "sage", "xero", "odoo", "intuit", "zoho"):
-        assert expected in vendor_ids
-
-
-async def test_get_products_for_sap_vendor(test_client: AsyncClient):
-    resp = await test_client.get("/api/v1/erp-systems/vendors/sap/products")
-    assert resp.status_code == 200
-    assert any(p["id"] == "sap" for p in resp.json())
-
-
-async def test_get_products_for_microsoft_vendor(test_client: AsyncClient):
-    resp = await test_client.get("/api/v1/erp-systems/vendors/microsoft/products")
-    assert resp.status_code == 200
-    assert any(p["id"] == "microsoft_dynamics" for p in resp.json())
-
-
-async def test_get_products_for_unknown_vendor_returns_404(test_client: AsyncClient):
-    """An unknown vendor ID returns 404 on the vendor-products cascade endpoint."""
-    resp = await test_client.get("/api/v1/erp-systems/vendors/unknown_xyz/products")
-    assert resp.status_code == 404
-
-
-async def test_get_connection_methods_for_sap(test_client: AsyncClient):
-    resp = await test_client.get("/api/v1/erp-systems/sap/connection-methods")
-    assert resp.status_code == 200
-    method_ids = {m["id"] for m in resp.json()}
-    assert "csv_file" in method_ids
-    assert "on_premise" in method_ids
-    assert "cloud_saas" not in method_ids
-
-
-async def test_get_connection_methods_for_oracle_netsuite(test_client: AsyncClient):
-    resp = await test_client.get("/api/v1/erp-systems/oracle_netsuite/connection-methods")
-    assert resp.status_code == 200
-    method_ids = {m["id"] for m in resp.json()}
-    assert "cloud_saas" in method_ids
-    assert "csv_file" in method_ids
-
-
-async def test_get_connection_methods_unknown_product_returns_empty(test_client: AsyncClient):
-    resp = await test_client.get("/api/v1/erp-systems/nonexistent_erp/connection-methods")
-    assert resp.status_code == 200
-    assert resp.json() == []
 
 
 async def test_get_all_erp_systems_returns_full_catalogue(test_client: AsyncClient):

@@ -88,20 +88,19 @@ class ProjectRepository(BaseRepository[Project]):
         )
         return list(result.all())
 
-    async def get_stage_counts(self, workstream_ids: list[UUID]) -> dict[UUID, tuple[int, int]]:
-        """Return {workstream_id: (total_stages, completed_stages)} for the given IDs."""
+    async def get_stage_counts(self, workstream_ids: list[UUID]) -> dict[UUID, int]:
+        """Return {workstream_id: progress_percent} as SUM(weight) for completed stages."""
         if not workstream_ids:
             return {}
         result = await self.session.execute(
             select(
                 WorkstreamStage.workstream_id,
-                func.count().label("total"),
-                func.sum(case((WorkstreamStage.is_completed, 1), else_=0)).label("completed"),
+                func.sum(case((WorkstreamStage.is_completed, WorkstreamStage.weight), else_=0)).label("progress"),
             )
             .where(WorkstreamStage.workstream_id.in_(workstream_ids))
             .group_by(WorkstreamStage.workstream_id)
         )
-        return {row.workstream_id: (int(row.total), int(row.completed)) for row in result.all()}
+        return {row.workstream_id: int(row.progress or 0) for row in result.all()}
 
 
 class ProjectAccessRepository:
