@@ -1,0 +1,66 @@
+name: Deploy to Demo
+
+# Fires on every push to `deploy-demo` so the demo environment always
+# tracks the tip of that branch. Also supports manual re-deploys from
+# the Actions tab via workflow_dispatch.
+#
+# How it works:
+#   1. SSH into the demo host.
+#   2. cd into the backend git checkout and reset it to deploy-demo HEAD.
+#   3. Invoke scripts/deploy.sh FROM THE CHECKOUT so CI always runs the
+#      version of the script on the branch — no host-side drift.
+
+on:
+  pull_request:
+    branches: [deploy-demo]
+    types: [opened, synchronize, reopened]
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "alembic.ini"
+      - "scripts/deploy.sh"
+      - ".github/workflows/deploy-demo.yml"
+  workflow_dispatch:   # allow manual re-deploy from the Actions tab
+
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: true   # latest push wins
+
+jobs:
+  deploy:
+    name: Deploy to demo
+    runs-on: ubuntu-latest
+    environment:
+      name: demo
+      url: https://app.dataportation.ai/demo/
+
+    steps:
+      - name: Trigger deploy.sh over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          BE_REF: deploy-demo
+          GH_PAT: ${{ secrets.GH_PAT_COA_DB_MODELS }}
+          GH_FETCH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.DEMO_SSH_HOST }}
+          username: ${{ secrets.DEMO_SSH_USER }}
+          key: ${{ secrets.DEMO_SSH_KEY }}
+          request_pty: false
+          envs: BE_REF,GH_PAT,GH_FETCH_TOKEN
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            echo "Deploying ref: ${BE_REF}"
+            BACKEND_DIR=/opt/coa-migration/environments/demo/backend
+            REPO_URL="https://x-access-token:${GH_FETCH_TOKEN}@github.com/bhavna-linkedrp/COA_Mapping_backend_V0.git"
+            if [ ! -d "${BACKEND_DIR}/.git" ]; then
+              echo "No repo found — cloning..."
+              mkdir -p "$(dirname "${BACKEND_DIR}")"
+              git clone --branch "${BE_REF}" "${REPO_URL}" "${BACKEND_DIR}"
+            fi
+            cd "${BACKEND_DIR}"
+            git remote set-url origin "${REPO_URL}"
+            git fetch origin
+            git reset --hard "origin/${BE_REF}"
+            GITHUB_TOKEN="${GH_PAT}" BE_REF="${BE_REF}" COA_DB_MODELS_BRANCH="demo" bash scripts/deploy.sh demo backend

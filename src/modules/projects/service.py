@@ -546,11 +546,7 @@ class ProjectService:
 
         # Overall progress = average of all included workstream progresses.
         # Dynamically computed so additional workstreams are reflected automatically.
-        all_progresses = [
-            ws_item.progress
-            for g in groups
-            for ws_item in g.workstreams
-        ]
+        all_progresses = [ws_item.progress for g in groups for ws_item in g.workstreams]
         overall_progress = round(sum(all_progresses) / len(all_progresses)) if all_progresses else 0
 
         return ProjectOverviewResponse(

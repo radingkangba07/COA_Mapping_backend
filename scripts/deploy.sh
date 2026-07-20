@@ -28,7 +28,7 @@ set -euo pipefail
 # =============================================================================
 
 APP_DIR=/opt/coa-migration
-ENV=${1:?"Usage: ./deploy.sh <testing|staging|production> [frontend|backend|all]"}
+ENV=${1:?"Usage: ./deploy.sh <testing|staging|demo|production> [frontend|backend|all]"}
 COMPONENT=${2:-all}
 
 case ${ENV} in
@@ -44,6 +44,12 @@ case ${ENV} in
         COMPOSE_FILE="docker-compose.staging.yml"
         PROJECT_NAME="coa-staging"
         ;;
+    demo)
+        FE_BRANCH="demo"
+        BE_BRANCH="deploy-demo"
+        COMPOSE_FILE="docker-compose.demo.yml"
+        PROJECT_NAME="coa-demo"
+        ;;
     production)
         FE_BRANCH="main"
         BE_BRANCH="main"
@@ -52,7 +58,7 @@ case ${ENV} in
         ;;
     *)
         echo "Unknown environment: ${ENV}"
-        echo "Usage: ./deploy.sh <testing|staging|production> [frontend|backend|all]"
+        echo "Usage: ./deploy.sh <testing|staging|demo|production> [frontend|backend|all]"
         exit 1
         ;;
 esac
