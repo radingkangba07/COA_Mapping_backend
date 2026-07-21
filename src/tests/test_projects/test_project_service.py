@@ -10,12 +10,8 @@ import pytest
 from src.modules.projects.service import ProjectService
 
 _ERP_SERVICE_PATH = "src.modules.erp.dependencies.get_erp_service"
-_NEXT_SEQ_PATH = (
-    "src.modules.workstreams.repository.WorkstreamRepository.next_display_seq"
-)
-_CREATE_STAGES_PATH = (
-    "src.modules.workstreams.repository.WorkstreamRepository.create_with_stages"
-)
+_NEXT_SEQ_PATH = "src.modules.workstreams.repository.WorkstreamRepository.next_display_seq"
+_CREATE_STAGES_PATH = "src.modules.workstreams.repository.WorkstreamRepository.create_with_stages"
 
 
 def _make_user():
