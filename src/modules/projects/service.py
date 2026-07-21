@@ -265,15 +265,31 @@ class ProjectService:
                 if not cat:
                     logger.warning("WorkstreamCategory slug '%s' not found — skipped", category_slug)
                     continue
-                seq = await ws_repo.next_display_seq(project.id, cat.id)
-                display_code = f"{cat.display_code_prefix}-{seq:03d}"
-                await ws_repo.create_with_stages(
-                    project_id=project.id,
-                    category_id=cat.id,
-                    name=ws_name,
-                    display_code=display_code,
-                    created_by=user.id,
-                )
+                try:
+                    async with self.session.begin_nested():
+                        seq = await ws_repo.next_display_seq(project.id, cat.id)
+                        display_code = f"{cat.display_code_prefix}-{seq:03d}"
+                        await ws_repo.create_with_stages(
+                            project_id=project.id,
+                            category_id=cat.id,
+                            name=ws_name,
+                            display_code=display_code,
+                            created_by=user.id,
+                        )
+                except Exception as exc:
+                    # Workstream seeding is best-effort — a schema mismatch (e.g.
+                    # pending migration on workstream_stages) must not abort the
+                    # project creation transaction. The begin_nested() savepoint
+                    # is automatically rolled back on exception; the outer
+                    # transaction (project row, access grant, etc.) is preserved.
+                    logger.error(
+                        "Auto-workstream creation failed for '%s' (category '%s') [%s] — skipped. "
+                        "Ensure dab26_stage_weight_reseed migration has been applied.",
+                        ws_name,
+                        category_slug,
+                        type(exc).__name__,
+                        exc_info=True,
+                    )
 
         # 8. Requester always admin
         await self.access_repo.grant(

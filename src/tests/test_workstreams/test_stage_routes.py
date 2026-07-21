@@ -61,9 +61,9 @@ async def test_list_stages(authenticated_client: AsyncClient, seed_user: dict[st
     assert names == [
         "Upload Files",
         "Type Mapping",
-        "Account Mapping: Low Confidence",
-        "Account Mapping: Medium Confidence",
-        "Account Mapping: Strong Confidence",
+        "Account Mapping: 1",
+        "Account Mapping: 2",
+        "Account Mapping: 3",
         "Preview & Export",
     ]
     assert all(not s["is_completed"] for s in stages)
