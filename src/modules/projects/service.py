@@ -276,17 +276,18 @@ class ProjectService:
                             display_code=display_code,
                             created_by=user.id,
                         )
-                except Exception:
+                except Exception as exc:
                     # Workstream seeding is best-effort — a schema mismatch (e.g.
                     # pending migration on workstream_stages) must not abort the
                     # project creation transaction. The begin_nested() savepoint
                     # is automatically rolled back on exception; the outer
                     # transaction (project row, access grant, etc.) is preserved.
-                    logger.warning(
-                        "Auto-workstream creation failed for '%s' (category '%s') — skipped. "
+                    logger.error(
+                        "Auto-workstream creation failed for '%s' (category '%s') [%s] — skipped. "
                         "Ensure dab26_stage_weight_reseed migration has been applied.",
                         ws_name,
                         category_slug,
+                        type(exc).__name__,
                         exc_info=True,
                     )
 

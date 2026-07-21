@@ -1,4 +1,5 @@
-from typing import Any
+from enum import IntEnum
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from coa_db_models.projects.models import Project
@@ -8,15 +9,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.base_repository import BaseRepository
 
-# Default stages seeded on every new workstream: (name, sequence, weight).
-# Weights sum to 100. Applies to all connection methods (CSV and MCP).
-DEFAULT_STAGES: list[tuple[str, int, int]] = [
-    ("Upload Files", 1, 30),
-    ("Type Mapping", 2, 30),
-    ("Account Mapping: 1", 3, 10),
-    ("Account Mapping: 2", 4, 10),
-    ("Account Mapping: 3", 5, 10),
-    ("Preview & Export", 6, 10),
+
+class StageDefinition(NamedTuple):
+    name: str
+    sequence: int
+    weight: int
+
+
+class StageSequence(IntEnum):
+    UPLOAD_FILES = 1
+    TYPE_MAPPING = 2
+    ACCOUNT_MAPPING_1 = 3
+    ACCOUNT_MAPPING_2 = 4
+    ACCOUNT_MAPPING_3 = 5
+    PREVIEW_AND_EXPORT = 6
+
+
+class StageWeight(IntEnum):
+    HIGH = 30
+    LOW = 10
+
+
+# Default stages seeded on every new workstream. Weights sum to 100.
+# Applies to all connection methods (CSV and MCP).
+DEFAULT_STAGES: list[StageDefinition] = [
+    StageDefinition("Upload Files", StageSequence.UPLOAD_FILES, StageWeight.HIGH),
+    StageDefinition("Type Mapping", StageSequence.TYPE_MAPPING, StageWeight.HIGH),
+    StageDefinition("Account Mapping: 1", StageSequence.ACCOUNT_MAPPING_1, StageWeight.LOW),
+    StageDefinition("Account Mapping: 2", StageSequence.ACCOUNT_MAPPING_2, StageWeight.LOW),
+    StageDefinition("Account Mapping: 3", StageSequence.ACCOUNT_MAPPING_3, StageWeight.LOW),
+    StageDefinition("Preview & Export", StageSequence.PREVIEW_AND_EXPORT, StageWeight.LOW),
 ]
 
 
@@ -105,20 +127,20 @@ class WorkstreamRepository(BaseRepository[Workstream]):
             name=name,
             display_code=display_code,
             status="not_started",
-            current_stage=DEFAULT_STAGES[0][0],  # "Upload Files"
+            current_stage=DEFAULT_STAGES[0].name,
             created_by=created_by,
         )
         self.session.add(workstream)
         await self.session.flush()
         await self.session.refresh(workstream)
 
-        for stage_name, seq, weight in DEFAULT_STAGES:
+        for stage in DEFAULT_STAGES:
             self.session.add(
                 WorkstreamStage(
                     workstream_id=workstream.id,
-                    name=stage_name,
-                    sequence=seq,
-                    weight=weight,
+                    name=stage.name,
+                    sequence=stage.sequence,
+                    weight=stage.weight,
                     is_completed=False,
                 )
             )
