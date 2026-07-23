@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import get_db
 from src.core.s3_client import get_s3_client
 from src.modules.item_profile.publisher import ItemProfilePublisher
-from src.modules.item_profile.repository import ItemProfileRunRepository
+from src.modules.item_profile.repository import ItemFieldProfileRepository, ItemProfileRunRepository
 from src.modules.item_profile.service import ItemProfileService
 from src.modules.storage.s3_provider import S3Provider
 
@@ -26,3 +26,11 @@ def get_item_profile_service(db: AsyncSession = Depends(get_db)) -> ItemProfileS
         publisher=publisher,
         session=db,
     )
+
+
+def get_run_repo(db: AsyncSession = Depends(get_db)) -> ItemProfileRunRepository:
+    return ItemProfileRunRepository(db)
+
+
+def get_field_repo(db: AsyncSession = Depends(get_db)) -> ItemFieldProfileRepository:
+    return ItemFieldProfileRepository(db)

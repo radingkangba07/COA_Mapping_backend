@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, field_validator
 
@@ -17,3 +19,73 @@ class RunCreateRequest(BaseModel):
 class RunCreateResponse(BaseModel):
     run_id: uuid.UUID
     status: str
+
+
+class RunListItem(BaseModel):
+    run_id: uuid.UUID
+    status: str
+    row_count: int | None
+    field_count: int | None
+    created_at: datetime
+    completed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class CoverageMetrics(BaseModel):
+    completeness_pct: float | None
+    uniqueness_pct: float | None
+    pattern_conformance_pct: float | None
+
+
+class RunDetailResponse(BaseModel):
+    run_id: uuid.UUID
+    status: str
+    row_count: int | None
+    field_count: int | None
+    coverage: CoverageMetrics
+    created_at: datetime
+    completed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class FieldListItem(BaseModel):
+    field_name: str
+    detected_type: str
+    severity: str | None
+    cardinality: str | None
+    semantic_role: str | None
+    confidence_score: float | None
+    null_pct: float | None
+    uniqueness_pct: float | None
+    anomaly_count: int | None
+
+    model_config = {"from_attributes": True}
+
+
+class PagedFieldsResponse(BaseModel):
+    items: list[FieldListItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class FieldDetailResponse(BaseModel):
+    field_name: str
+    detected_type: str
+    total_count: int
+    null_count: int
+    distinct_count: int
+    severity: str | None
+    cardinality: str | None
+    semantic_role: str | None
+    confidence_score: float | None
+    evidence: str | None
+    pattern_summary: dict[str, Any] | None
+    anomaly_count: int | None
+    anomaly_examples: list[str] | None
+    stats: dict[str, Any] | None
+    sample_values: dict[str, Any] | None
+
+    model_config = {"from_attributes": True}

@@ -1,13 +1,28 @@
 import logging
+from typing import Literal
 from uuid import UUID
 
 from coa_db_models.auth.models import User
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 
-from src.core.exceptions import AppError
+from src.core.exceptions import AppError, ConflictError
 from src.modules.auth.dependencies import get_current_user
-from src.modules.item_profile.dependencies import get_item_profile_service
-from src.modules.item_profile.schemas import RunCreateRequest, RunCreateResponse
+from src.modules.item_profile.dependencies import (
+    get_field_repo,
+    get_item_profile_service,
+    get_run_repo,
+)
+from src.modules.item_profile.repository import ItemFieldProfileRepository, ItemProfileRunRepository
+from src.modules.item_profile.schemas import (
+    CoverageMetrics,
+    FieldDetailResponse,
+    FieldListItem,
+    PagedFieldsResponse,
+    RunCreateRequest,
+    RunCreateResponse,
+    RunDetailResponse,
+    RunListItem,
+)
 from src.modules.item_profile.service import ItemProfileService
 from src.modules.projects.dependencies import require_project_access
 
@@ -43,3 +58,139 @@ async def create_item_profile_run(
     except Exception:
         logger.exception("Unexpected error initiating item profile run for project %s", project_id)
         raise
+
+
+@router.get(
+    "/projects/{project_id}/item-profile/runs",
+    response_model=list[RunListItem],
+)
+async def list_item_profile_runs(
+    project_id: UUID,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("viewer")),
+    run_repo: ItemProfileRunRepository = Depends(get_run_repo),
+):
+    runs = await run_repo.list_runs(project_id)
+    return [
+        RunListItem(
+            run_id=r.id,
+            status=r.status,
+            row_count=r.source_row_count,
+            field_count=r.field_count,
+            created_at=r.created_at,
+            completed_at=r.completed_at,
+        )
+        for r in runs
+    ]
+
+
+@router.get(
+    "/projects/{project_id}/item-profile/runs/{run_id}",
+    response_model=RunDetailResponse,
+)
+async def get_item_profile_run(
+    project_id: UUID,
+    run_id: UUID,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("viewer")),
+    run_repo: ItemProfileRunRepository = Depends(get_run_repo),
+    field_repo: ItemFieldProfileRepository = Depends(get_field_repo),
+):
+    run = await run_repo.get_run_or_404(run_id)
+    coverage_data = await field_repo.compute_coverage(run_id)
+    return RunDetailResponse(
+        run_id=run.id,
+        status=run.status,
+        row_count=run.source_row_count,
+        field_count=run.field_count,
+        coverage=CoverageMetrics(**coverage_data),
+        created_at=run.created_at,
+        completed_at=run.completed_at,
+    )
+
+
+@router.get(
+    "/projects/{project_id}/item-profile/runs/{run_id}/fields",
+    response_model=PagedFieldsResponse,
+)
+async def list_item_profile_fields(
+    project_id: UUID,
+    run_id: UUID,
+    role: str | None = Query(default=None),
+    severity: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    sort: Literal["field_name", "null_pct", "uniqueness_pct"] = Query(default="field_name"),
+    order: Literal["asc", "desc"] = Query(default="asc"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=30, ge=1, le=100),
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("viewer")),
+    run_repo: ItemProfileRunRepository = Depends(get_run_repo),
+    field_repo: ItemFieldProfileRepository = Depends(get_field_repo),
+):
+    run = await run_repo.get_run_or_404(run_id)
+    if run.status != "profiling_complete":
+        raise ConflictError(f"Run {run_id} is not complete (status: {run.status})")
+
+    fields, total = await field_repo.list_fields(
+        run_id,
+        role=role,
+        severity=severity,
+        search=search,
+        sort=sort,
+        order=order,
+        page=page,
+        page_size=page_size,
+    )
+    items = [
+        FieldListItem(
+            field_name=f.field_name,
+            detected_type=f.detected_type,
+            severity=f.severity,
+            cardinality=f.cardinality,
+            semantic_role=f.semantic_role,
+            confidence_score=f.confidence_score,
+            null_pct=f.stats.get("null_pct") if f.stats else None,
+            uniqueness_pct=f.stats.get("uniqueness_pct") if f.stats else None,
+            anomaly_count=f.anomaly_count,
+        )
+        for f in fields
+    ]
+    return PagedFieldsResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get(
+    "/projects/{project_id}/item-profile/runs/{run_id}/fields/{field_name}",
+    response_model=FieldDetailResponse,
+)
+async def get_item_profile_field(
+    project_id: UUID,
+    run_id: UUID,
+    field_name: str,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("viewer")),
+    run_repo: ItemProfileRunRepository = Depends(get_run_repo),
+    field_repo: ItemFieldProfileRepository = Depends(get_field_repo),
+):
+    run = await run_repo.get_run_or_404(run_id)
+    if run.status != "profiling_complete":
+        raise ConflictError(f"Run {run_id} is not complete (status: {run.status})")
+
+    fp = await field_repo.get_field_or_404(run_id, field_name)
+    return FieldDetailResponse(
+        field_name=fp.field_name,
+        detected_type=fp.detected_type,
+        total_count=fp.total_count,
+        null_count=fp.null_count,
+        distinct_count=fp.distinct_count,
+        severity=fp.severity,
+        cardinality=fp.cardinality,
+        semantic_role=fp.semantic_role,
+        confidence_score=fp.confidence_score,
+        evidence=fp.evidence,
+        pattern_summary=fp.pattern_summary,
+        anomaly_count=fp.anomaly_count,
+        anomaly_examples=fp.anomaly_examples,
+        stats=fp.stats,
+        sample_values=fp.sample_values,
+    )

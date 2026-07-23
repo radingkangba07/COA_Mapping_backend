@@ -1,4 +1,4 @@
-"""Unit tests for ItemProfileService — DAB-33 ingestion, DAB-34 stats, DAB-35 pattern/anomaly, DAB-36 semantic roles."""
+"""Unit tests for ItemProfileService — DAB-33 ingestion, DAB-34 stats, DAB-35 pattern/anomaly, DAB-36 semantic roles, DAB-37 profile API."""
 
 import io
 import uuid
@@ -754,3 +754,348 @@ class TestApplySemanticRoles:
         s = _make_stats(uniqueness_pct=100.0, null_pct=0.0, cardinality="high", distinct_count=200, non_null_count=200)
         apply_semantic_roles([s], {"has_cross_subsidiary_splits": True}, 95.0, 5.0)
         assert s.semantic_role == "cross_subsidiary_identifier"
+
+
+# ---------------------------------------------------------------------------
+# DAB-37 — Profile Payload API integration tests
+# ---------------------------------------------------------------------------
+
+from typing import Any
+
+import pytest
+from httpx import AsyncClient
+
+
+async def _create_project_and_run(
+    client: AsyncClient, seed_user: dict[str, Any]
+) -> tuple[str, str]:
+    """Create a project and an in-progress run directly in the DB."""
+    proj_resp = await client.post(
+        "/api/v1/projects",
+        json={"name": "Profile API Test", "org_id": seed_user["org_id"]},
+    )
+    assert proj_resp.status_code == 201
+    project_id = proj_resp.json()["id"]
+
+    from datetime import UTC, datetime
+    from src.core.database import get_db as _get_db
+    from src.main import app
+
+    db_override = app.dependency_overrides.get(_get_db)
+    run_id = None
+    async for session in db_override():
+        from coa_db_models.profiling.models import ItemProfileRun
+        run = ItemProfileRun(
+            project_id=project_id,
+            status="ingesting",
+            source_file_ref="test/sample.csv",
+            started_at=datetime.now(UTC),
+        )
+        session.add(run)
+        await session.commit()
+        await session.refresh(run)
+        run_id = str(run.id)
+        break
+
+    return project_id, run_id
+
+
+async def _seed_completed_run(
+    client: AsyncClient, seed_user: dict[str, Any]
+) -> tuple[str, str]:
+    """Create a run, seed field profiles directly, and mark it complete."""
+    project_id, run_id = await _create_project_and_run(client, seed_user)
+
+    from src.core.database import get_db as _get_db
+    from src.main import app
+
+    db_override = app.dependency_overrides.get(_get_db)
+    async for session in db_override():
+        from coa_db_models.profiling.models import ItemFieldProfile, ItemProfileRun
+        from datetime import UTC, datetime
+        from sqlalchemy import insert, update
+
+        # Mark run complete with row/field counts
+        await session.execute(
+            update(ItemProfileRun)
+            .where(ItemProfileRun.id == run_id)
+            .values(
+                status="profiling_complete",
+                source_row_count=500,
+                field_count=3,
+                completed_at=datetime.now(UTC),
+            )
+        )
+
+        # Seed three field profiles
+        fields = [
+            {
+                "run_id": run_id,
+                "field_name": "account_code",
+                "detected_type": "string",
+                "total_count": 500,
+                "null_count": 0,
+                "distinct_count": 500,
+                "severity": "ok",
+                "cardinality": "high",
+                "semantic_role": "identifier_candidate",
+                "confidence_score": 0.95,
+                "evidence": "uniqueness=100.0%",
+                "anomaly_count": 0,
+                "stats": {"null_pct": 0.0, "uniqueness_pct": 100.0},
+            },
+            {
+                "run_id": run_id,
+                "field_name": "account_type",
+                "detected_type": "string",
+                "total_count": 500,
+                "null_count": 10,
+                "distinct_count": 5,
+                "severity": "warning",
+                "cardinality": "low",
+                "semantic_role": "value_list",
+                "confidence_score": 0.8,
+                "evidence": "distinct=5",
+                "anomaly_count": 2,
+                "stats": {"null_pct": 2.0, "uniqueness_pct": 1.0},
+            },
+            {
+                "run_id": run_id,
+                "field_name": "balance",
+                "detected_type": "decimal",
+                "total_count": 500,
+                "null_count": 50,
+                "distinct_count": 450,
+                "severity": "blocker",
+                "cardinality": "high",
+                "semantic_role": "numeric_measure",
+                "confidence_score": 0.9,
+                "evidence": "numeric",
+                "anomaly_count": None,
+                "stats": {"null_pct": 10.0, "uniqueness_pct": 95.7},
+            },
+        ]
+        await session.execute(insert(ItemFieldProfile), fields)
+        await session.commit()
+        break
+
+    return project_id, run_id
+
+
+@pytest.mark.asyncio
+async def test_list_runs_empty(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    proj_resp = await authenticated_client.post(
+        "/api/v1/projects",
+        json={"name": "Empty Runs Project", "org_id": seed_user["org_id"]},
+    )
+    project_id = proj_resp.json()["id"]
+
+    resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/item-profile/runs")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_list_runs_returns_created_run(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _create_project_and_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/item-profile/runs")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["run_id"] == run_id
+    assert data[0]["status"] == "ingesting"
+    assert "created_at" in data[0]
+
+
+@pytest.mark.asyncio
+async def test_get_run_not_found(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    proj_resp = await authenticated_client.post(
+        "/api/v1/projects",
+        json={"name": "Not Found Project", "org_id": seed_user["org_id"]},
+    )
+    project_id = proj_resp.json()["id"]
+    fake_run = "00000000-0000-0000-0000-000000000000"
+
+    resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/item-profile/runs/{fake_run}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_run_detail_with_coverage(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["run_id"] == run_id
+    assert data["status"] == "profiling_complete"
+    assert data["row_count"] == 500
+    assert data["field_count"] == 3
+    cov = data["coverage"]
+    assert cov["completeness_pct"] is not None
+    assert 0.0 <= cov["completeness_pct"] <= 100.0
+    assert cov["uniqueness_pct"] is not None
+    assert cov["pattern_conformance_pct"] is not None
+
+
+@pytest.mark.asyncio
+async def test_list_fields_in_progress_run_returns_409(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _create_project_and_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields"
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_list_fields_default_pagination(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 3
+    assert data["page"] == 1
+    assert data["page_size"] == 30
+    assert len(data["items"]) == 3
+
+    names = {item["field_name"] for item in data["items"]}
+    assert names == {"account_code", "account_type", "balance"}
+
+
+@pytest.mark.asyncio
+async def test_list_fields_filter_by_role(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields?role=value_list"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["field_name"] == "account_type"
+    assert data["items"][0]["semantic_role"] == "value_list"
+
+
+@pytest.mark.asyncio
+async def test_list_fields_filter_by_severity(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields?severity=blocker"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["field_name"] == "balance"
+
+
+@pytest.mark.asyncio
+async def test_list_fields_search(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields?search=account"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
+    names = {item["field_name"] for item in data["items"]}
+    assert names == {"account_code", "account_type"}
+
+
+@pytest.mark.asyncio
+async def test_list_fields_pagination(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields?page=1&page_size=2"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 3
+    assert data["page_size"] == 2
+    assert len(data["items"]) == 2
+
+    resp2 = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields?page=2&page_size=2"
+    )
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert len(data2["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_list_fields_sort_by_null_pct_desc(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields?sort=null_pct&order=desc"
+    )
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    null_pcts = [item["null_pct"] for item in items if item["null_pct"] is not None]
+    assert null_pcts == sorted(null_pcts, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_get_field_detail(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields/account_code"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["field_name"] == "account_code"
+    assert data["detected_type"] == "string"
+    assert data["total_count"] == 500
+    assert data["null_count"] == 0
+    assert data["distinct_count"] == 500
+    assert data["semantic_role"] == "identifier_candidate"
+    assert data["confidence_score"] == 0.95
+    assert data["stats"] is not None
+
+
+@pytest.mark.asyncio
+async def test_get_field_detail_not_found(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields/nonexistent_field"
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_field_detail_in_progress_run_returns_409(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _create_project_and_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields/any_field"
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_list_runs_requires_auth(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    proj_resp = await authenticated_client.post(
+        "/api/v1/projects",
+        json={"name": "Auth Test Project", "org_id": seed_user["org_id"]},
+    )
+    project_id = proj_resp.json()["id"]
+
+    from httpx import ASGITransport, AsyncClient as RawClient
+    from src.main import app
+
+    async with RawClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
+        resp = await anon.get(f"/api/v1/projects/{project_id}/item-profile/runs")
+        assert resp.status_code in (401, 403, 422)
