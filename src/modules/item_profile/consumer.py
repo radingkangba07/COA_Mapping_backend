@@ -9,7 +9,12 @@ from nats.js import JetStreamContext
 
 from src.core.config import get_settings
 from src.modules.item_profile.repository import ItemFieldProfileRepository, ItemProfileRunRepository
-from src.modules.item_profile.service import compute_all_stats, load_full_csv
+from src.modules.item_profile.service import (
+    compute_all_stats,
+    detect_cross_subsidiary_splits,
+    detect_duplicates,
+    load_full_csv,
+)
 from src.modules.storage.s3_provider import S3Provider
 
 logger = logging.getLogger(__name__)
@@ -100,6 +105,8 @@ class ItemProfileConsumer:
             raw, _ = self.store.get_object(run.source_file_ref)
             df = load_full_csv(raw)
             all_stats = compute_all_stats(df)
+            dup_summary = detect_duplicates(df)
+            cross_sub_summary = detect_cross_subsidiary_splits(df)
 
             # Idempotent: remove previous results for this run before inserting
             await self.field_repo.delete_by_run(run_id)
@@ -113,6 +120,9 @@ class ItemProfileConsumer:
                     "distinct_count": s.distinct_count,
                     "severity": s.severity,
                     "cardinality": s.cardinality,
+                    "pattern_summary": s.pattern_summary,
+                    "anomaly_count": s.anomaly_count,
+                    "anomaly_examples": s.anomaly_examples or None,
                     "stats": {
                         "null_pct": s.null_pct,
                         "uniqueness_pct": s.uniqueness_pct,
@@ -133,6 +143,8 @@ class ItemProfileConsumer:
                 run_id,
                 status="profiling_complete",
                 completed_at=datetime.now(UTC),
+                duplicate_summary=dup_summary,
+                cross_subsidiary_summary=cross_sub_summary,
             )
             await self.session.commit()
             logger.info("Run %s profiling complete: %d fields", run_id, len(all_stats))

@@ -1,4 +1,4 @@
-"""Unit tests for ItemProfileService — CSV ingestion (DAB-33) and stats engine (DAB-34)."""
+"""Unit tests for ItemProfileService — CSV ingestion (DAB-33), stats engine (DAB-34), pattern/anomaly (DAB-35)."""
 
 import io
 import uuid
@@ -13,12 +13,17 @@ from src.modules.item_profile.service import (
     FieldStats,
     ItemProfileService,
     _assign_severity,
+    _char_class_signature,
     _classify_cardinality,
     _count_rows,
+    _detect_anomalies,
+    _detect_pattern,
     _infer_column_type,
     _parse_csv,
     compute_all_stats,
     compute_field_stats,
+    detect_cross_subsidiary_splits,
+    detect_duplicates,
     load_full_csv,
 )
 
@@ -424,3 +429,173 @@ class TestLoadFullCsv:
         raw = "name\nM\xe9xico\n".encode("latin-1")
         df = load_full_csv(raw)
         assert len(df) == 1
+
+
+# ---------------------------------------------------------------------------
+# DAB-35: Pattern detection and anomaly engine
+# ---------------------------------------------------------------------------
+
+class TestCharClassSignature:
+    def test_alpha_only(self):
+        assert _char_class_signature("ABC") == "AAA"
+
+    def test_digit_only(self):
+        assert _char_class_signature("1234") == "0000"
+
+    def test_mixed_with_special(self):
+        assert _char_class_signature("AB-1234") == "AA-0000"
+
+    def test_empty_string(self):
+        assert _char_class_signature("") == ""
+
+    def test_special_chars_retained(self):
+        assert _char_class_signature("A1.B2") == "A0.A0"
+
+
+class TestDetectPattern:
+    def test_single_dominant_pattern(self):
+        s = pd.Series(["AB-1234", "CD-5678", "EF-9012"])
+        result = _detect_pattern(s)
+        assert result is not None
+        assert result["dominant"] == "AA-0000"
+        assert result["dominant_pct"] == 100.0
+        assert result["variants"] == []
+
+    def test_mixed_patterns_returns_dominant(self):
+        s = pd.Series(["AB-1234"] * 8 + ["1234"] * 2)
+        result = _detect_pattern(s)
+        assert result["dominant"] == "AA-0000"
+        assert result["dominant_pct"] == 80.0
+        assert len(result["variants"]) == 1
+        assert result["variants"][0]["pattern"] == "0000"
+
+    def test_empty_series_returns_none(self):
+        assert _detect_pattern(pd.Series([], dtype=object)) is None
+
+
+class TestDetectAnomalies:
+    def test_no_anomalies(self):
+        s = pd.Series(["AB-1234", "CD-5678"])
+        count, examples = _detect_anomalies(s, "AA-0000")
+        assert count == 0
+        assert examples == []
+
+    def test_with_anomalies(self):
+        s = pd.Series(["AB-1234", "CD-5678", "999"])
+        count, examples = _detect_anomalies(s, "AA-0000")
+        assert count == 1
+        assert "999" in examples
+
+    def test_all_anomalous(self):
+        s = pd.Series(["123", "456", "789"])
+        count, examples = _detect_anomalies(s, "AA-0000")
+        assert count == 3
+
+    def test_examples_capped_at_10(self):
+        s = pd.Series([str(i) for i in range(20)])
+        count, examples = _detect_anomalies(s, "AAAA")
+        assert count == 20
+        assert len(examples) == 10
+
+
+class TestComputeFieldStatsPatterns:
+    def test_string_field_gets_pattern_summary(self):
+        s = pd.Series(["AB-1234", "CD-5678", "EF-9012"])
+        stats = compute_field_stats("code", s)
+        assert stats.pattern_summary is not None
+        assert stats.pattern_summary["dominant"] == "AA-0000"
+        assert stats.anomaly_count == 0
+
+    def test_uniform_field_zero_anomalies(self):
+        s = pd.Series(["AB-1234"] * 50)
+        stats = compute_field_stats("code", s)
+        assert stats.anomaly_count == 0
+        assert stats.anomaly_examples == []
+
+    def test_mixed_pattern_field_anomaly_detected(self):
+        s = pd.Series(["AB-1234"] * 9 + ["999"])
+        stats = compute_field_stats("code", s)
+        assert stats.anomaly_count == 1
+        assert "999" in stats.anomaly_examples
+
+    def test_numeric_field_has_no_pattern(self):
+        s = pd.Series([1.0, 2.5, 3.0])
+        stats = compute_field_stats("price", s)
+        assert stats.pattern_summary is None
+        assert stats.anomaly_count == 0
+
+
+class TestDetectDuplicates:
+    def test_no_duplicates(self):
+        df = pd.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+        result = detect_duplicates(df)
+        assert result["group_count"] == 0
+        assert result["total_duplicate_rows"] == 0
+        assert result["examples"] == []
+
+    def test_all_duplicates(self):
+        df = pd.DataFrame({"id": [1, 1, 1], "name": ["a", "a", "a"]})
+        result = detect_duplicates(df)
+        assert result["group_count"] == 1
+        assert result["total_duplicate_rows"] == 3
+
+    def test_partial_duplicates(self):
+        df = pd.DataFrame({"id": [1, 1, 2], "name": ["a", "a", "b"]})
+        result = detect_duplicates(df)
+        assert result["group_count"] == 1
+        assert result["total_duplicate_rows"] == 2
+
+    def test_with_explicit_key_fields(self):
+        df = pd.DataFrame({"id": [1, 1, 2], "name": ["a", "b", "c"]})
+        # Only key on 'id' → rows 0 and 1 are duplicates
+        result = detect_duplicates(df, key_fields=["id"])
+        assert result["group_count"] == 1
+        assert result["total_duplicate_rows"] == 2
+
+    def test_empty_dataframe(self):
+        df = pd.DataFrame({"id": pd.Series([], dtype=int)})
+        result = detect_duplicates(df)
+        assert result["group_count"] == 0
+
+
+class TestDetectCrossSubsidiarySplits:
+    def test_no_subsidiary_column(self):
+        df = pd.DataFrame({"account": ["A", "B"], "amount": [100, 200]})
+        result = detect_cross_subsidiary_splits(df)
+        assert result["has_cross_subsidiary_splits"] is False
+        assert result["split_count"] == 0
+
+    def test_no_splits(self):
+        df = pd.DataFrame({
+            "account": ["A", "B", "C"],
+            "subsidiary": ["Sub1", "Sub1", "Sub1"],
+        })
+        result = detect_cross_subsidiary_splits(df)
+        assert result["has_cross_subsidiary_splits"] is False
+
+    def test_with_cross_subsidiary_splits(self):
+        df = pd.DataFrame({
+            "account": ["A", "A", "B"],
+            "subsidiary": ["Sub1", "Sub2", "Sub1"],
+        })
+        result = detect_cross_subsidiary_splits(df)
+        assert result["has_cross_subsidiary_splits"] is True
+        assert result["split_count"] == 1
+        assert len(result["examples"]) == 1
+        assert set(result["examples"][0]["subsidiaries"]) == {"Sub1", "Sub2"}
+
+    def test_company_column_detected(self):
+        df = pd.DataFrame({
+            "account": ["A", "A"],
+            "company": ["C1", "C2"],
+        })
+        result = detect_cross_subsidiary_splits(df)
+        assert result["has_cross_subsidiary_splits"] is True
+
+    def test_branch_column_detected(self):
+        df = pd.DataFrame({
+            "account": ["X", "X"],
+            "branch": ["B1", "B2"],
+        })
+        result = detect_cross_subsidiary_splits(df)
+        assert result["has_cross_subsidiary_splits"] is True

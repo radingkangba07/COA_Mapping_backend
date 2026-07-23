@@ -104,6 +104,10 @@ class FieldStats:
     numeric_max: float | None = None
     numeric_mean: float | None = None
     numeric_std: float | None = None
+    # DAB-35: pattern detection
+    pattern_summary: dict | None = None
+    anomaly_count: int = 0
+    anomaly_examples: list[str] = field(default_factory=list)
 
 
 def _classify_cardinality(distinct_count: int) -> str:
@@ -131,6 +135,123 @@ def _top_values(series: pd.Series, total_rows: int) -> list[dict]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# Pattern detection and anomaly engine (DAB-35)
+# ---------------------------------------------------------------------------
+
+_SUBSIDIARY_KEYWORDS = frozenset({"subsidiary", "company", "branch", "division"})
+_ANOMALY_EXAMPLES_LIMIT = 10
+_PATTERN_VARIANTS_LIMIT = 10
+_DUPLICATE_EXAMPLES_LIMIT = 5
+
+
+def _char_class_signature(value: str) -> str:
+    """Convert each character to its class: alpha→A, digit→0, others retained."""
+    out = []
+    for ch in value:
+        if ch.isalpha():
+            out.append("A")
+        elif ch.isdigit():
+            out.append("0")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _detect_pattern(non_null: pd.Series) -> dict | None:
+    """Return pattern_summary dict for a non-null string series, or None if empty."""
+    if non_null.empty:
+        return None
+    str_vals = non_null.astype(str)
+    signatures = str_vals.apply(_char_class_signature)
+    counts = signatures.value_counts()
+    total = len(str_vals)
+    dominant = counts.index[0]
+    dominant_pct = round(int(counts.iloc[0]) / total * 100, 2)
+    variants = [
+        {"pattern": sig, "count": int(cnt), "pct": round(int(cnt) / total * 100, 2)}
+        for sig, cnt in counts.iloc[1:].items()
+    ][:_PATTERN_VARIANTS_LIMIT]
+    return {"dominant": dominant, "dominant_pct": dominant_pct, "variants": variants}
+
+
+def _detect_anomalies(non_null: pd.Series, dominant: str) -> tuple[int, list[str]]:
+    """Return (anomaly_count, anomaly_examples) for values deviating from the dominant pattern."""
+    str_vals = non_null.astype(str)
+    mask = str_vals.apply(_char_class_signature) != dominant
+    anomalous = str_vals[mask]
+    return int(len(anomalous)), anomalous.tolist()[:_ANOMALY_EXAMPLES_LIMIT]
+
+
+def detect_duplicates(df: pd.DataFrame, key_fields: list[str] | None = None) -> dict:
+    """Identify rows sharing identical key field values. Defaults to all columns."""
+    cols = key_fields if key_fields is not None else df.columns.tolist()
+    cols = [c for c in cols if c in df.columns]
+    if not cols:
+        return {"group_count": 0, "total_duplicate_rows": 0, "examples": []}
+
+    dupes = df[df.duplicated(subset=cols, keep=False)]
+    if dupes.empty:
+        return {"group_count": 0, "total_duplicate_rows": 0, "examples": []}
+
+    groups = dupes.groupby(cols, dropna=False)
+    examples = []
+    for keys, grp in groups:
+        if len(examples) >= _DUPLICATE_EXAMPLES_LIMIT:
+            break
+        key_vals = keys if isinstance(keys, tuple) else (keys,)
+        examples.append({
+            "key": {k: str(v) for k, v in zip(cols, key_vals)},
+            "count": len(grp),
+        })
+
+    return {
+        "group_count": groups.ngroups,
+        "total_duplicate_rows": len(dupes),
+        "examples": examples,
+    }
+
+
+def detect_cross_subsidiary_splits(
+    df: pd.DataFrame,
+    key_fields: list[str] | None = None,
+) -> dict:
+    """Detect key values that appear under multiple subsidiary/company column values."""
+    subsidiary_col = next(
+        (c for c in df.columns if any(kw in c.lower() for kw in _SUBSIDIARY_KEYWORDS)),
+        None,
+    )
+    if subsidiary_col is None:
+        return {"has_cross_subsidiary_splits": False, "split_count": 0, "examples": []}
+
+    cols = key_fields if key_fields is not None else [c for c in df.columns if c != subsidiary_col]
+    cols = [c for c in cols if c in df.columns and c != subsidiary_col]
+    if not cols:
+        return {"has_cross_subsidiary_splits": False, "split_count": 0, "examples": []}
+
+    splits = df.groupby(cols, dropna=False)[subsidiary_col].nunique()
+    split_keys = splits[splits > 1]
+    split_count = int(len(split_keys))
+
+    examples = []
+    for keys in list(split_keys.index)[:_DUPLICATE_EXAMPLES_LIMIT]:
+        key_vals = keys if isinstance(keys, tuple) else (keys,)
+        mask = pd.Series(True, index=df.index)
+        for col, val in zip(cols, key_vals):
+            mask &= df[col] == val
+        subs = df.loc[mask, subsidiary_col].unique().tolist()
+        examples.append({
+            "key": {c: str(v) for c, v in zip(cols, key_vals)},
+            "subsidiaries": [str(s) for s in subs],
+        })
+
+    return {
+        "has_cross_subsidiary_splits": split_count > 0,
+        "split_count": split_count,
+        "examples": examples,
+    }
+
+
 def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
     total_count = len(series)
     null_count = int(series.isna().sum())
@@ -148,12 +269,18 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
 
     text_len_min = text_len_max = text_len_mean = None
     numeric_min = numeric_max = numeric_mean = numeric_std = None
+    pattern_summary: dict | None = None
+    anomaly_count = 0
+    anomaly_examples: list[str] = []
 
     if detected_type == "string" and non_null_count > 0:
         lengths = non_null.astype(str).str.len()
         text_len_min = int(lengths.min())
         text_len_max = int(lengths.max())
         text_len_mean = round(float(lengths.mean()), 2)
+        pattern_summary = _detect_pattern(non_null)
+        if pattern_summary is not None:
+            anomaly_count, anomaly_examples = _detect_anomalies(non_null, pattern_summary["dominant"])
 
     if detected_type in ("integer", "decimal") and non_null_count > 0:
         numeric = pd.to_numeric(non_null, errors="coerce").dropna()
@@ -182,6 +309,9 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
         numeric_max=numeric_max,
         numeric_mean=numeric_mean,
         numeric_std=numeric_std,
+        pattern_summary=pattern_summary,
+        anomaly_count=anomaly_count,
+        anomaly_examples=anomaly_examples,
     )
 
 

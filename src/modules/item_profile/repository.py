@@ -31,6 +31,8 @@ class ItemProfileRunRepository:
         field_count: int | None = None,
         error_detail: str | None = None,
         completed_at: datetime | None = None,
+        duplicate_summary: dict | None = None,
+        cross_subsidiary_summary: dict | None = None,
     ) -> None:
         run = await self.session.get(ItemProfileRun, run_id)
         if not run:
@@ -44,6 +46,10 @@ class ItemProfileRunRepository:
             run.error_detail = error_detail
         if completed_at is not None:
             run.completed_at = completed_at
+        if duplicate_summary is not None:
+            run.duplicate_summary = duplicate_summary
+        if cross_subsidiary_summary is not None:
+            run.cross_subsidiary_summary = cross_subsidiary_summary
         await self.session.flush()
 
 
