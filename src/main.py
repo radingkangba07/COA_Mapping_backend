@@ -28,6 +28,7 @@ from src.modules.storage.routes import files_router
 from src.modules.storage.routes import router as storage_router
 from src.modules.websocket.routes import router as websocket_router
 from src.modules.workstreams.routes import router as workstreams_router
+from src.modules.item_profile.router import router as item_profile_router
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,7 @@ app.include_router(jobs_router)
 app.include_router(websocket_router)
 app.include_router(legacy_erp_router)
 app.include_router(legacy_mappings_router)
+app.include_router(item_profile_router)
 
 
 # Health check — registered at both the prefixed API path and an unprefixed

@@ -35,7 +35,8 @@ class Settings(BaseSettings):
     nats_stream_name: str = "COA_JOBS"
     nats_subject_job_run: str = "jobs.mapping.run"
     nats_subject_results: str = "jobs.mapping.status"
-    nats_stream_subjects: list[str] = ["jobs.mapping.*"]
+    nats_subject_item_profile_run_created: str = "item-profile.run.created"
+    nats_stream_subjects: list[str] = ["jobs.mapping.*", "item-profile.*"]
     nats_stream_retention: str = "workqueue"  # workqueue | limits | interest
     nats_stream_max_age_seconds: int = 86400
     nats_durable_consumer: str = "api-result-consumer"

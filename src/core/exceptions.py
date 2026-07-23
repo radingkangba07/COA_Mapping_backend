@@ -46,3 +46,10 @@ class ServiceUnavailableError(AppError):
 
     def __init__(self, detail: str = "Service unavailable"):
         super().__init__(detail)
+
+
+class PayloadTooLargeError(AppError):
+    status_code = 413
+
+    def __init__(self, detail: str = "Payload too large"):
+        super().__init__(detail)

@@ -56,3 +56,10 @@ class S3Provider:
             return True
         except ClientError:
             return False
+
+    def get_object_size(self, path: str) -> int | None:
+        try:
+            resp = self.client.head_object(Bucket=self.bucket, Key=path)
+            return resp.get("ContentLength")
+        except ClientError:
+            return None
