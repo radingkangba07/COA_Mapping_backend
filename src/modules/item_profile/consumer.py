@@ -1,0 +1,141 @@
+import asyncio
+import json
+import logging
+from datetime import UTC, datetime
+from uuid import UUID
+
+from coa_db_models.profiling.models import ItemProfileRun
+from nats.js import JetStreamContext
+
+from src.core.config import get_settings
+from src.modules.item_profile.repository import ItemFieldProfileRepository, ItemProfileRunRepository
+from src.modules.item_profile.service import compute_all_stats, load_full_csv
+from src.modules.storage.s3_provider import S3Provider
+
+logger = logging.getLogger(__name__)
+
+
+class ItemProfileConsumer:
+    def __init__(
+        self,
+        jetstream: JetStreamContext,
+        run_repo: ItemProfileRunRepository,
+        field_repo: ItemFieldProfileRepository,
+        store: S3Provider | None,
+        session,
+    ):
+        self.js = jetstream
+        self.run_repo = run_repo
+        self.field_repo = field_repo
+        self.store = store
+        self.session = session
+        self._task: asyncio.Task | None = None
+
+    async def start(self) -> None:
+        settings = get_settings()
+        subject = settings.nats_subject_item_profile_run_created
+        durable = settings.nats_durable_item_profile
+        try:
+            self.sub = await self.js.subscribe(subject, durable=durable, manual_ack=True)
+        except Exception:
+            logger.warning("Durable consumer %s already bound, recreating", durable)
+            await self.js.delete_consumer(settings.nats_stream_name, durable)
+            self.sub = await self.js.subscribe(subject, durable=durable, manual_ack=True)
+        self._task = asyncio.create_task(self._consume())
+        logger.info("Item profile consumer started, listening on %s", subject)
+
+    async def stop(self) -> None:
+        logger.info("Stopping item profile consumer")
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Item profile consumer task raised during shutdown")
+            self._task = None
+        sub = getattr(self, "sub", None)
+        if sub is not None:
+            try:
+                await sub.unsubscribe()
+            except Exception:
+                logger.exception("Failed to unsubscribe item profile consumer")
+        if self.session is not None:
+            try:
+                await self.session.close()
+            except Exception:
+                logger.exception("Failed to close item profile consumer DB session")
+        logger.info("Item profile consumer stopped")
+
+    async def _consume(self) -> None:
+        async for msg in self.sub.messages:
+            try:
+                data = json.loads(msg.data.decode())
+                await self._handle_run_created(data)
+                await msg.ack()
+            except Exception:
+                logger.exception("Failed to process item-profile.run.created message")
+                await msg.nak(delay=5)
+
+    async def _handle_run_created(self, data: dict) -> None:
+        run_id = UUID(data["run_id"])
+
+        run: ItemProfileRun | None = await self.session.get(ItemProfileRun, run_id)
+        if run is None:
+            logger.warning("Run %s not found, skipping", run_id)
+            return
+
+        if not run.source_file_ref:
+            logger.warning("Run %s has no source_file_ref, skipping", run_id)
+            return
+
+        try:
+            if not self.store:
+                raise RuntimeError("Storage not configured")
+
+            raw, _ = self.store.get_object(run.source_file_ref)
+            df = load_full_csv(raw)
+            all_stats = compute_all_stats(df)
+
+            # Idempotent: remove previous results for this run before inserting
+            await self.field_repo.delete_by_run(run_id)
+            await self.field_repo.bulk_create([
+                {
+                    "run_id": run_id,
+                    "field_name": s.field_name,
+                    "detected_type": s.detected_type,
+                    "total_count": s.total_count,
+                    "null_count": s.null_count,
+                    "distinct_count": s.distinct_count,
+                    "severity": s.severity,
+                    "cardinality": s.cardinality,
+                    "stats": {
+                        "null_pct": s.null_pct,
+                        "uniqueness_pct": s.uniqueness_pct,
+                        "top_values": s.top_values,
+                        "text_len_min": s.text_len_min,
+                        "text_len_max": s.text_len_max,
+                        "text_len_mean": s.text_len_mean,
+                        "numeric_min": s.numeric_min,
+                        "numeric_max": s.numeric_max,
+                        "numeric_mean": s.numeric_mean,
+                        "numeric_std": s.numeric_std,
+                    },
+                }
+                for s in all_stats
+            ])
+
+            await self.run_repo.update_run(
+                run_id,
+                status="profiling_complete",
+                completed_at=datetime.now(UTC),
+            )
+            await self.session.commit()
+            logger.info("Run %s profiling complete: %d fields", run_id, len(all_stats))
+
+        except Exception as exc:
+            logger.exception("Field stats computation failed for run %s", run_id)
+            await self.run_repo.update_run(run_id, status="failed", error_detail=str(exc))
+            await self.session.commit()
+            raise

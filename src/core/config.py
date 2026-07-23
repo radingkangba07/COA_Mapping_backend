@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     nats_stream_retention: str = "workqueue"  # workqueue | limits | interest
     nats_stream_max_age_seconds: int = 86400
     nats_durable_consumer: str = "api-result-consumer"
+    nats_durable_item_profile: str = "item-profile-consumer"
 
     # S3-Compatible Storage (DigitalOcean Spaces in production, MinIO for local dev)
     s3_endpoint: str = ""

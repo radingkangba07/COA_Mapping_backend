@@ -1,5 +1,6 @@
 import io
 import logging
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -76,6 +77,135 @@ def _count_rows(raw: bytes) -> int:
     return max(0, line_count - 1)
 
 
+# ---------------------------------------------------------------------------
+# Field statistics engine (DAB-34)
+# ---------------------------------------------------------------------------
+
+_TOP_VALUES_LIMIT = 20
+
+
+@dataclass
+class FieldStats:
+    field_name: str
+    detected_type: str
+    total_count: int
+    null_count: int
+    null_pct: float
+    distinct_count: int
+    non_null_count: int
+    uniqueness_pct: float
+    cardinality: str
+    severity: str
+    top_values: list[dict] = field(default_factory=list)
+    text_len_min: int | None = None
+    text_len_max: int | None = None
+    text_len_mean: float | None = None
+    numeric_min: float | None = None
+    numeric_max: float | None = None
+    numeric_mean: float | None = None
+    numeric_std: float | None = None
+
+
+def _classify_cardinality(distinct_count: int) -> str:
+    if distinct_count < 10:
+        return "low"
+    if distinct_count <= 100:
+        return "medium"
+    return "high"
+
+
+def _assign_severity(null_pct: float) -> str:
+    if null_pct > 50.0:
+        return "blocker"
+    if null_pct > 10.0:
+        return "warning"
+    return "ok"
+
+
+def _top_values(series: pd.Series, total_rows: int) -> list[dict]:
+    non_null = series.dropna()
+    counts = non_null.astype(str).value_counts().head(_TOP_VALUES_LIMIT)
+    return [
+        {"value": v, "count": int(c), "pct": round(c / total_rows * 100, 2)}
+        for v, c in counts.items()
+    ]
+
+
+def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
+    total_count = len(series)
+    null_count = int(series.isna().sum())
+    non_null_count = total_count - null_count
+    null_pct = round(null_count / total_count * 100, 2) if total_count else 0.0
+
+    non_null = series.dropna()
+    distinct_count = int(non_null.nunique())
+    uniqueness_pct = round(distinct_count / non_null_count * 100, 2) if non_null_count else 0.0
+
+    detected_type = _infer_column_type(series)
+    cardinality = _classify_cardinality(distinct_count)
+    severity = _assign_severity(null_pct)
+    top_vals = _top_values(series, total_count)
+
+    text_len_min = text_len_max = text_len_mean = None
+    numeric_min = numeric_max = numeric_mean = numeric_std = None
+
+    if detected_type == "string" and non_null_count > 0:
+        lengths = non_null.astype(str).str.len()
+        text_len_min = int(lengths.min())
+        text_len_max = int(lengths.max())
+        text_len_mean = round(float(lengths.mean()), 2)
+
+    if detected_type in ("integer", "decimal") and non_null_count > 0:
+        numeric = pd.to_numeric(non_null, errors="coerce").dropna()
+        if not numeric.empty:
+            numeric_min = round(float(numeric.min()), 4)
+            numeric_max = round(float(numeric.max()), 4)
+            numeric_mean = round(float(numeric.mean()), 4)
+            numeric_std = round(float(numeric.std()), 4) if len(numeric) > 1 else 0.0
+
+    return FieldStats(
+        field_name=col_name,
+        detected_type=detected_type,
+        total_count=total_count,
+        null_count=null_count,
+        null_pct=null_pct,
+        distinct_count=distinct_count,
+        non_null_count=non_null_count,
+        uniqueness_pct=uniqueness_pct,
+        cardinality=cardinality,
+        severity=severity,
+        top_values=top_vals,
+        text_len_min=text_len_min,
+        text_len_max=text_len_max,
+        text_len_mean=text_len_mean,
+        numeric_min=numeric_min,
+        numeric_max=numeric_max,
+        numeric_mean=numeric_mean,
+        numeric_std=numeric_std,
+    )
+
+
+def compute_all_stats(df: pd.DataFrame) -> list[FieldStats]:
+    return [compute_field_stats(col, df[col]) for col in df.columns]
+
+
+def load_full_csv(raw: bytes) -> pd.DataFrame:
+    """Parse the complete CSV (no row limit) for statistics computation."""
+    for encoding in ("utf-8-sig", "latin-1"):
+        try:
+            df = pd.read_csv(io.BytesIO(raw), encoding=encoding)
+            if df.columns.empty:
+                raise RuntimeError("CSV has no detectable columns")
+            return df
+        except RuntimeError:
+            raise
+        except UnicodeDecodeError:
+            continue
+        except Exception as exc:
+            raise RuntimeError(f"CSV parsing failed: {exc}") from exc
+    raise RuntimeError("CSV encoding could not be determined")
+
+
 class ItemProfileService:
     def __init__(
         self,
@@ -110,6 +240,7 @@ class ItemProfileService:
         run = await self.run_repo.create_run(
             project_id=project_id,
             started_at=datetime.now(UTC),
+            source_file_ref=source_file_ref,
         )
         await self.session.commit()
         logger.info("Item profile run %s initiated for project %s", run.id, project_id)

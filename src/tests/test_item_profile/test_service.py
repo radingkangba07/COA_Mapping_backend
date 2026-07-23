@@ -1,4 +1,4 @@
-"""Unit tests for ItemProfileService — CSV ingestion pathway (DAB-33)."""
+"""Unit tests for ItemProfileService — CSV ingestion (DAB-33) and stats engine (DAB-34)."""
 
 import io
 import uuid
@@ -10,10 +10,16 @@ import pytest
 
 from src.core.exceptions import PayloadTooLargeError, ValidationError
 from src.modules.item_profile.service import (
+    FieldStats,
     ItemProfileService,
+    _assign_severity,
+    _classify_cardinality,
     _count_rows,
     _infer_column_type,
     _parse_csv,
+    compute_all_stats,
+    compute_field_stats,
+    load_full_csv,
 )
 
 
@@ -270,3 +276,151 @@ class TestProcessRun:
 
         call_kwargs = run_repo.update_run.call_args.kwargs
         assert call_kwargs["status"] == "profiling_pending"
+
+
+# ---------------------------------------------------------------------------
+# DAB-34: Field statistics engine
+# ---------------------------------------------------------------------------
+
+class TestClassifyCardinality:
+    def test_low(self):
+        assert _classify_cardinality(5) == "low"
+
+    def test_medium(self):
+        assert _classify_cardinality(50) == "medium"
+
+    def test_high(self):
+        assert _classify_cardinality(200) == "high"
+
+    def test_boundary_low_medium(self):
+        assert _classify_cardinality(9) == "low"
+        assert _classify_cardinality(10) == "medium"
+
+    def test_boundary_medium_high(self):
+        assert _classify_cardinality(100) == "medium"
+        assert _classify_cardinality(101) == "high"
+
+
+class TestAssignSeverity:
+    def test_blocker(self):
+        assert _assign_severity(51.0) == "blocker"
+
+    def test_warning(self):
+        assert _assign_severity(15.0) == "warning"
+
+    def test_ok(self):
+        assert _assign_severity(5.0) == "ok"
+
+    def test_exact_50_is_warning(self):
+        assert _assign_severity(50.0) == "warning"
+
+    def test_exact_10_is_ok(self):
+        assert _assign_severity(10.0) == "ok"
+
+
+class TestComputeFieldStats:
+    def test_null_heavy_field(self):
+        s = pd.Series([None] * 60 + ["alice"] * 40)
+        stats = compute_field_stats("name", s)
+        assert stats.null_count == 60
+        assert stats.null_pct == 60.0
+        assert stats.severity == "blocker"
+
+    def test_fully_unique_field(self):
+        # 101 distinct values → high cardinality (> 100 per spec)
+        s = pd.Series([str(i) for i in range(101)])
+        stats = compute_field_stats("id", s)
+        assert stats.distinct_count == 101
+        assert stats.uniqueness_pct == 100.0
+        assert stats.cardinality == "high"
+
+    def test_constant_field_all_same_value(self):
+        s = pd.Series(["active"] * 100)
+        stats = compute_field_stats("status", s)
+        assert stats.distinct_count == 1
+        assert stats.cardinality == "low"
+        assert stats.null_pct == 0.0
+        assert stats.severity == "ok"
+        assert len(stats.top_values) == 1
+        assert stats.top_values[0]["value"] == "active"
+        assert stats.top_values[0]["count"] == 100
+
+    def test_numeric_field(self):
+        s = pd.Series([1.0, 2.5, 3.0, 4.5, 5.0])
+        stats = compute_field_stats("price", s)
+        assert stats.detected_type == "decimal"
+        assert stats.numeric_min == 1.0
+        assert stats.numeric_max == 5.0
+        assert stats.numeric_mean is not None
+        assert stats.text_len_min is None
+
+    def test_integer_field(self):
+        s = pd.Series([10, 20, 30, 40])
+        stats = compute_field_stats("qty", s)
+        assert stats.detected_type == "integer"
+        assert stats.numeric_min == 10.0
+        assert stats.numeric_max == 40.0
+
+    def test_string_field_text_lengths(self):
+        s = pd.Series(["hi", "hello", "hey there"])
+        stats = compute_field_stats("greeting", s)
+        assert stats.detected_type == "string"
+        assert stats.text_len_min == 2
+        assert stats.text_len_max == 9
+        assert stats.numeric_min is None
+
+    def test_mixed_null_and_values(self):
+        s = pd.Series([1, 2, None, None, 3])
+        stats = compute_field_stats("val", s)
+        assert stats.total_count == 5
+        assert stats.null_count == 2
+        assert stats.non_null_count == 3
+        assert stats.null_pct == 40.0
+        assert stats.severity == "warning"
+
+    def test_top_values_limited_to_20(self):
+        # 25 distinct values — top_values should cap at 20
+        s = pd.Series([str(i) for i in range(25)])
+        stats = compute_field_stats("col", s)
+        assert len(stats.top_values) == 20
+
+    def test_top_values_pct_sums_roughly_to_100_for_constant(self):
+        s = pd.Series(["x"] * 50)
+        stats = compute_field_stats("col", s)
+        assert stats.top_values[0]["pct"] == 100.0
+
+    def test_null_pct_against_total_not_non_null(self):
+        # 30 nulls out of 100 total → null_pct = 30%, uniqueness based on 70 non-null
+        s = pd.Series([None] * 30 + ["a"] * 35 + ["b"] * 35)
+        stats = compute_field_stats("col", s)
+        assert stats.null_pct == 30.0
+        assert stats.non_null_count == 70
+        assert stats.uniqueness_pct == round(2 / 70 * 100, 2)
+
+
+class TestComputeAllStats:
+    def test_returns_one_stat_per_column(self):
+        df = pd.DataFrame({"name": ["alice", "bob"], "age": [30, 25], "active": [True, False]})
+        results = compute_all_stats(df)
+        assert len(results) == 3
+        assert [r.field_name for r in results] == ["name", "age", "active"]
+
+    def test_empty_dataframe_columns(self):
+        df = pd.DataFrame({"col": pd.Series([], dtype=object)})
+        results = compute_all_stats(df)
+        assert len(results) == 1
+        assert results[0].total_count == 0
+
+
+class TestLoadFullCsv:
+    def test_loads_all_rows(self):
+        # _parse_csv uses nrows=500; load_full_csv must load everything
+        rows = [f"val{i}" for i in range(600)]
+        raw = ("name\n" + "\n".join(rows)).encode()
+        df = load_full_csv(raw)
+        assert len(df) == 600
+
+    def test_latin1_encoding(self):
+        raw = "name\nM\xe9xico\n".encode("latin-1")
+        df = load_full_csv(raw)
+        assert len(df) == 1

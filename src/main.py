@@ -28,6 +28,8 @@ from src.modules.storage.routes import files_router
 from src.modules.storage.routes import router as storage_router
 from src.modules.websocket.routes import router as websocket_router
 from src.modules.workstreams.routes import router as workstreams_router
+from src.modules.item_profile.consumer import ItemProfileConsumer
+from src.modules.item_profile.repository import ItemFieldProfileRepository, ItemProfileRunRepository
 from src.modules.item_profile.router import router as item_profile_router
 
 logger = logging.getLogger(__name__)
@@ -62,10 +64,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await consumer.start()
     logger.info("NATS consumer started")
 
+    profile_session = database._async_session_factory()
+    s3 = get_s3_client()
+    from src.modules.storage.s3_provider import S3Provider as _S3Provider
+    profile_store = _S3Provider(s3) if s3 else None
+    profile_consumer = ItemProfileConsumer(
+        jetstream=get_jetstream(),
+        run_repo=ItemProfileRunRepository(profile_session),
+        field_repo=ItemFieldProfileRepository(profile_session),
+        store=profile_store,
+        session=profile_session,
+    )
+    await profile_consumer.start()
+    logger.info("Item profile consumer started")
+
     init_resend()
     yield
     logger.info("Shutting down COA Migration API")
     close_resend()
+    await profile_consumer.stop()
     await consumer.stop()
     await close_nats()
     close_s3_client()
