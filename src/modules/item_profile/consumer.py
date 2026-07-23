@@ -39,7 +39,10 @@ class ItemProfileConsumer:
             self.sub = await self.js.subscribe(subject, durable=durable, manual_ack=True)
         except Exception:
             logger.warning("Durable consumer %s already bound, recreating", durable)
-            await self.js.delete_consumer(settings.nats_stream_name, durable)
+            try:
+                await self.js.delete_consumer(settings.nats_stream_name, durable)
+            except Exception:
+                pass
             self.sub = await self.js.subscribe(subject, durable=durable, manual_ack=True)
         self._task = asyncio.create_task(self._consume())
         logger.info("Item profile consumer started, listening on %s", subject)
