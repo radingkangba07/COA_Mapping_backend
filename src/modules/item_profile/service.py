@@ -108,6 +108,10 @@ class FieldStats:
     pattern_summary: dict | None = None
     anomaly_count: int = 0
     anomaly_examples: list[str] = field(default_factory=list)
+    # DAB-36: semantic role
+    semantic_role: str = "ambiguous"
+    confidence_score: float = 0.0
+    evidence: str = ""
 
 
 def _classify_cardinality(distinct_count: int) -> str:
@@ -250,6 +254,116 @@ def detect_cross_subsidiary_splits(
         "split_count": split_count,
         "examples": examples,
     }
+
+
+# ---------------------------------------------------------------------------
+# Semantic role inference (DAB-36)
+# ---------------------------------------------------------------------------
+
+_ROLE_IDENTIFIER = "identifier_candidate"
+_ROLE_CROSS_SUB = "cross_subsidiary_identifier"
+_ROLE_VALUE_LIST = "value_list"
+_ROLE_FREE_TEXT = "free_text"
+_ROLE_NUMERIC = "numeric_measure"
+_ROLE_DATE = "date_temporal"
+_ROLE_AMBIGUOUS = "ambiguous"
+
+_FREE_TEXT_MIN_LEN_MEAN = 40.0
+_FREE_TEXT_MIN_UNIQUENESS = 80.0
+_VALUE_LIST_MAX_DISTINCT = 20
+_VALUE_LIST_MAX_NULL_PCT = 20.0
+
+
+def infer_semantic_role(
+    stats: "FieldStats",
+    has_cross_subsidiary: bool,
+    min_uniqueness: float,
+    max_null_pct: float,
+) -> tuple[str, float, str]:
+    """Return (role, confidence, evidence) for a single field's stats."""
+    base = (
+        f"{stats.distinct_count:,} distinct values across {stats.non_null_count:,} "
+        f"non-null records ({stats.uniqueness_pct}% unique)"
+    )
+
+    is_identifier = (
+        stats.uniqueness_pct >= min_uniqueness
+        and stats.null_pct < max_null_pct
+        and stats.cardinality == "high"
+    )
+
+    if is_identifier and has_cross_subsidiary:
+        return (
+            _ROLE_CROSS_SUB,
+            round(stats.uniqueness_pct / 100, 4),
+            f"{base} — qualifies as Cross-Subsidiary Identifier "
+            f"(≥{min_uniqueness}% unique, <{max_null_pct}% null, values span multiple subsidiaries)",
+        )
+
+    if is_identifier:
+        return (
+            _ROLE_IDENTIFIER,
+            round(stats.uniqueness_pct / 100, 4),
+            f"{base} — qualifies as Identifier Candidate "
+            f"(≥{min_uniqueness}% unique, <{max_null_pct}% null)",
+        )
+
+    if stats.distinct_count <= _VALUE_LIST_MAX_DISTINCT and stats.null_pct < _VALUE_LIST_MAX_NULL_PCT:
+        confidence = round(1 - (stats.distinct_count / _VALUE_LIST_MAX_DISTINCT), 4)
+        return (
+            _ROLE_VALUE_LIST,
+            confidence,
+            f"{base} — qualifies as Value List / Enumeration "
+            f"(≤{_VALUE_LIST_MAX_DISTINCT} distinct values, <{_VALUE_LIST_MAX_NULL_PCT}% null)",
+        )
+
+    if (
+        stats.detected_type == "string"
+        and stats.text_len_mean is not None
+        and stats.text_len_mean > _FREE_TEXT_MIN_LEN_MEAN
+        and stats.uniqueness_pct > _FREE_TEXT_MIN_UNIQUENESS
+    ):
+        return (
+            _ROLE_FREE_TEXT,
+            0.7,
+            f"{base} — qualifies as Free Text / Description "
+            f"(mean length {stats.text_len_mean} chars, >{_FREE_TEXT_MIN_UNIQUENESS}% unique)",
+        )
+
+    if stats.detected_type in ("integer", "decimal"):
+        return (
+            _ROLE_NUMERIC,
+            0.8,
+            f"{base} — qualifies as Numeric Measure (inferred type: {stats.detected_type})",
+        )
+
+    if stats.detected_type == "date":
+        return (
+            _ROLE_DATE,
+            0.9,
+            f"{base} — qualifies as Date / Temporal (inferred type: date)",
+        )
+
+    return (
+        _ROLE_AMBIGUOUS,
+        0.0,
+        f"{base} — no classification threshold met",
+    )
+
+
+def apply_semantic_roles(
+    all_stats: list["FieldStats"],
+    cross_sub_summary: dict,
+    min_uniqueness: float,
+    max_null_pct: float,
+) -> list["FieldStats"]:
+    """Assign semantic_role, confidence_score, and evidence to every FieldStats in place."""
+    has_cross_sub = cross_sub_summary.get("has_cross_subsidiary_splits", False)
+    for s in all_stats:
+        s.semantic_role, s.confidence_score, s.evidence = infer_semantic_role(
+            s, has_cross_sub, min_uniqueness, max_null_pct
+        )
+    return all_stats
 
 
 def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:

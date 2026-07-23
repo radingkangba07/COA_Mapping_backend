@@ -9,7 +9,9 @@ from nats.js import JetStreamContext
 
 from src.core.config import get_settings
 from src.modules.item_profile.repository import ItemFieldProfileRepository, ItemProfileRunRepository
+from src.core.config import get_settings
 from src.modules.item_profile.service import (
+    apply_semantic_roles,
     compute_all_stats,
     detect_cross_subsidiary_splits,
     detect_duplicates,
@@ -102,11 +104,18 @@ class ItemProfileConsumer:
             if not self.store:
                 raise RuntimeError("Storage not configured")
 
+            settings = get_settings()
             raw, _ = self.store.get_object(run.source_file_ref)
             df = load_full_csv(raw)
             all_stats = compute_all_stats(df)
             dup_summary = detect_duplicates(df)
             cross_sub_summary = detect_cross_subsidiary_splits(df)
+            apply_semantic_roles(
+                all_stats,
+                cross_sub_summary,
+                settings.profile_identifier_min_uniqueness,
+                settings.profile_identifier_max_null_pct,
+            )
 
             # Idempotent: remove previous results for this run before inserting
             await self.field_repo.delete_by_run(run_id)
@@ -123,6 +132,9 @@ class ItemProfileConsumer:
                     "pattern_summary": s.pattern_summary,
                     "anomaly_count": s.anomaly_count,
                     "anomaly_examples": s.anomaly_examples or None,
+                    "semantic_role": s.semantic_role,
+                    "confidence_score": s.confidence_score,
+                    "evidence": s.evidence or None,
                     "stats": {
                         "null_pct": s.null_pct,
                         "uniqueness_pct": s.uniqueness_pct,

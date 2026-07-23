@@ -1,4 +1,4 @@
-"""Unit tests for ItemProfileService — CSV ingestion (DAB-33), stats engine (DAB-34), pattern/anomaly (DAB-35)."""
+"""Unit tests for ItemProfileService — DAB-33 ingestion, DAB-34 stats, DAB-35 pattern/anomaly, DAB-36 semantic roles."""
 
 import io
 import uuid
@@ -20,10 +20,12 @@ from src.modules.item_profile.service import (
     _detect_pattern,
     _infer_column_type,
     _parse_csv,
+    apply_semantic_roles,
     compute_all_stats,
     compute_field_stats,
     detect_cross_subsidiary_splits,
     detect_duplicates,
+    infer_semantic_role,
     load_full_csv,
 )
 
@@ -599,3 +601,156 @@ class TestDetectCrossSubsidiarySplits:
         })
         result = detect_cross_subsidiary_splits(df)
         assert result["has_cross_subsidiary_splits"] is True
+
+
+# ---------------------------------------------------------------------------
+# DAB-36: Semantic role inference
+# ---------------------------------------------------------------------------
+
+def _make_stats(**overrides) -> FieldStats:
+    """Build a minimal FieldStats with sensible defaults, applying overrides."""
+    defaults = dict(
+        field_name="col",
+        detected_type="string",
+        total_count=100,
+        null_count=0,
+        null_pct=0.0,
+        distinct_count=5,
+        non_null_count=100,
+        uniqueness_pct=5.0,
+        cardinality="low",
+        severity="ok",
+    )
+    defaults.update(overrides)
+    return FieldStats(**defaults)
+
+
+_MIN_U = 95.0
+_MAX_N = 5.0
+
+
+class TestInferSemanticRole:
+    def test_identifier_candidate(self):
+        s = _make_stats(uniqueness_pct=100.0, null_pct=0.0, cardinality="high", distinct_count=1000, non_null_count=1000)
+        role, conf, evidence = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role == "identifier_candidate"
+        assert conf == 1.0
+        assert "Identifier Candidate" in evidence
+
+    def test_cross_subsidiary_identifier(self):
+        s = _make_stats(uniqueness_pct=100.0, null_pct=0.0, cardinality="high", distinct_count=1000, non_null_count=1000)
+        role, conf, evidence = infer_semantic_role(s, True, _MIN_U, _MAX_N)
+        assert role == "cross_subsidiary_identifier"
+        assert "Cross-Subsidiary" in evidence
+
+    def test_identifier_threshold_exact_min_uniqueness(self):
+        s = _make_stats(uniqueness_pct=95.0, null_pct=0.0, cardinality="high", distinct_count=200, non_null_count=200)
+        role, _, _ = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role == "identifier_candidate"
+
+    def test_identifier_just_below_uniqueness_threshold(self):
+        s = _make_stats(uniqueness_pct=94.9, null_pct=0.0, cardinality="high", distinct_count=200, non_null_count=200)
+        role, _, _ = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role != "identifier_candidate"
+
+    def test_identifier_fails_if_null_pct_too_high(self):
+        s = _make_stats(uniqueness_pct=99.0, null_pct=5.0, cardinality="high", distinct_count=200, non_null_count=200)
+        role, _, _ = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role != "identifier_candidate"
+
+    def test_identifier_fails_if_cardinality_not_high(self):
+        s = _make_stats(uniqueness_pct=99.0, null_pct=0.0, cardinality="medium", distinct_count=50, non_null_count=100)
+        role, _, _ = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role != "identifier_candidate"
+
+    def test_value_list(self):
+        s = _make_stats(distinct_count=5, null_pct=0.0, uniqueness_pct=5.0, cardinality="low")
+        role, conf, evidence = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role == "value_list"
+        assert conf == round(1 - 5 / 20, 4)
+        assert "Value List" in evidence
+
+    def test_value_list_exactly_20_distinct(self):
+        s = _make_stats(distinct_count=20, null_pct=0.0, uniqueness_pct=20.0, cardinality="medium")
+        role, conf, _ = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role == "value_list"
+        assert conf == 0.0
+
+    def test_value_list_fails_above_20_distinct(self):
+        s = _make_stats(distinct_count=21, null_pct=0.0, uniqueness_pct=21.0, cardinality="medium")
+        role, _, _ = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role != "value_list"
+
+    def test_free_text(self):
+        s = _make_stats(
+            detected_type="string",
+            text_len_mean=85.0,
+            uniqueness_pct=90.0,
+            distinct_count=90,
+            non_null_count=100,
+            cardinality="high",
+            null_pct=0.0,
+        )
+        # uniqueness_pct=90 is below 95 so not identifier; distinct=90 > 20 so not value_list
+        role, conf, evidence = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role == "free_text"
+        assert conf == 0.7
+        assert "Free Text" in evidence
+
+    def test_numeric_measure_decimal(self):
+        s = _make_stats(detected_type="decimal", distinct_count=500, uniqueness_pct=50.0, cardinality="high", null_pct=0.0)
+        # uniqueness 50% < 95% so not identifier
+        role, conf, _ = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role == "numeric_measure"
+        assert conf == 0.8
+
+    def test_numeric_measure_integer(self):
+        s = _make_stats(detected_type="integer", distinct_count=50, uniqueness_pct=50.0, cardinality="medium")
+        role, _, _ = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role == "numeric_measure"
+
+    def test_date_temporal(self):
+        # 60% unique so does not meet identifier threshold (≥95%) — falls to date_temporal
+        s = _make_stats(detected_type="date", distinct_count=60, uniqueness_pct=60.0, cardinality="medium", null_pct=0.0, non_null_count=100)
+        role, conf, evidence = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role == "date_temporal"
+        assert conf == 0.9
+        assert "Date" in evidence
+
+    def test_ambiguous(self):
+        s = _make_stats(detected_type="string", distinct_count=50, uniqueness_pct=50.0, cardinality="medium", null_pct=25.0, text_len_mean=10.0)
+        role, conf, _ = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert role == "ambiguous"
+        assert conf == 0.0
+
+    def test_evidence_is_reproducible(self):
+        s = _make_stats(distinct_count=42, non_null_count=100, uniqueness_pct=42.0, cardinality="medium")
+        _, _, ev1 = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        _, _, ev2 = infer_semantic_role(s, False, _MIN_U, _MAX_N)
+        assert ev1 == ev2
+
+    def test_confidence_within_bounds(self):
+        for role_stats in [
+            _make_stats(uniqueness_pct=100.0, null_pct=0.0, cardinality="high", distinct_count=1000, non_null_count=1000),
+            _make_stats(distinct_count=5, null_pct=0.0),
+            _make_stats(detected_type="decimal", distinct_count=50, uniqueness_pct=50.0, cardinality="medium"),
+        ]:
+            _, conf, _ = infer_semantic_role(role_stats, False, _MIN_U, _MAX_N)
+            assert 0.0 <= conf <= 1.0
+
+
+class TestApplySemanticRoles:
+    def test_all_stats_get_a_role(self):
+        df = pd.DataFrame({"id": range(200), "status": ["active"] * 200, "amount": [1.5] * 200})
+        all_stats = compute_all_stats(df)
+        cross_sub = {"has_cross_subsidiary_splits": False}
+        apply_semantic_roles(all_stats, cross_sub, 95.0, 5.0)
+        for s in all_stats:
+            assert s.semantic_role != ""
+            assert s.evidence != ""
+            assert 0.0 <= s.confidence_score <= 1.0
+
+    def test_cross_subsidiary_flag_passed_through(self):
+        s = _make_stats(uniqueness_pct=100.0, null_pct=0.0, cardinality="high", distinct_count=200, non_null_count=200)
+        apply_semantic_roles([s], {"has_cross_subsidiary_splits": True}, 95.0, 5.0)
+        assert s.semantic_role == "cross_subsidiary_identifier"

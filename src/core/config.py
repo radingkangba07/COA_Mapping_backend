@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     nats_durable_consumer: str = "api-result-consumer"
     nats_durable_item_profile: str = "item-profile-consumer"
 
+    # Item profile semantic role inference thresholds (DAB-36)
+    profile_identifier_min_uniqueness: float = 95.0
+    profile_identifier_max_null_pct: float = 5.0
+
     # S3-Compatible Storage (DigitalOcean Spaces in production, MinIO for local dev)
     s3_endpoint: str = ""
     s3_access_key: str = ""
