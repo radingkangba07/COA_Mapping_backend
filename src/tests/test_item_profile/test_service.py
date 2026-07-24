@@ -1,4 +1,4 @@
-"""Unit tests for ItemProfileService — DAB-33 ingestion, DAB-34 stats, DAB-35 pattern/anomaly, DAB-36 semantic roles, DAB-37 profile API."""
+"""Unit tests for ItemProfileService — DAB-33 ingestion, DAB-34 stats, DAB-35 pattern/anomaly, DAB-36 semantic roles, DAB-37 profile API, DAB-38 decision API."""
 
 import io
 import uuid
@@ -1099,3 +1099,240 @@ async def test_list_runs_requires_auth(authenticated_client: AsyncClient, seed_u
     async with RawClient(transport=ASGITransport(app=app), base_url="http://test") as anon:
         resp = await anon.get(f"/api/v1/projects/{project_id}/item-profile/runs")
         assert resp.status_code in (401, 403, 422)
+
+
+# ---------------------------------------------------------------------------
+# DAB-38 — Decision API integration tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_create_decision_confirm_identifier(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["field_name"] == "account_code"
+    assert data["decision_type"] == "confirm_identifier"
+    assert data["status"] == "pending"
+    assert data["fix_type"] is None
+    assert "decision_id" in data
+    assert "decided_at" in data
+
+
+@pytest.mark.asyncio
+async def test_create_decision_apply_fix_with_fix_type(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={
+            "field_name": "account_type",
+            "decision_type": "apply_fix",
+            "fix_type": "trim_whitespace",
+            "fix_params": {"strip_chars": " "},
+        },
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["decision_type"] == "apply_fix"
+    assert data["fix_type"] == "trim_whitespace"
+    assert data["fix_params"] == {"strip_chars": " "}
+
+
+@pytest.mark.asyncio
+async def test_duplicate_decision_returns_409(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_list_decisions_empty(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions"
+    )
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_list_decisions_after_create(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["field_name"] == "account_code"
+    assert data[0]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_undo_decision(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    create_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    decision_id = create_resp.json()["decision_id"]
+
+    undo_resp = await authenticated_client.delete(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}"
+    )
+    assert undo_resp.status_code == 200
+    assert undo_resp.json()["status"] == "undone"
+
+
+@pytest.mark.asyncio
+async def test_undo_already_undone_returns_409(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    create_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    decision_id = create_resp.json()["decision_id"]
+
+    await authenticated_client.delete(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}"
+    )
+    resp = await authenticated_client.delete(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}"
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_redecide_after_undo(authenticated_client: AsyncClient, seed_user: dict[str, Any]):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    create_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    decision_id = create_resp.json()["decision_id"]
+
+    await authenticated_client.delete(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}"
+    )
+
+    # Re-decide after undo — should succeed with a new decision record
+    resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "ignore_field"},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["decision_id"] != decision_id
+    assert resp.json()["decision_type"] == "ignore_field"
+
+
+@pytest.mark.asyncio
+async def test_field_detail_includes_current_decision(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields/account_code"
+    )
+    assert resp.status_code == 200
+    cd = resp.json()["current_decision"]
+    assert cd is not None
+    assert cd["decision_type"] == "confirm_identifier"
+    assert cd["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_field_detail_no_decision_is_null(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields/account_code"
+    )
+    assert resp.status_code == 200
+    assert resp.json()["current_decision"] is None
+
+
+@pytest.mark.asyncio
+async def test_project_decisions_aggregate(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_type", "decision_type": "apply_fix", "fix_type": "trim_whitespace"},
+    )
+
+    resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/profile-decisions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["confirmed_identifiers"]) == 1
+    assert data["confirmed_identifiers"][0]["field_name"] == "account_code"
+    assert len(data["applied_fixes"]) == 1
+    assert data["applied_fixes"][0]["field_name"] == "account_type"
+
+
+@pytest.mark.asyncio
+async def test_project_decisions_excludes_undone(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    create_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    decision_id = create_resp.json()["decision_id"]
+
+    await authenticated_client.delete(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}"
+    )
+
+    resp = await authenticated_client.get(f"/api/v1/projects/{project_id}/profile-decisions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["confirmed_identifiers"] == []
+    assert data["applied_fixes"] == []

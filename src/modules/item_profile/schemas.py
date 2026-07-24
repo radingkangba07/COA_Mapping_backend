@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -87,5 +87,38 @@ class FieldDetailResponse(BaseModel):
     anomaly_examples: list[str] | None
     stats: dict[str, Any] | None
     sample_values: dict[str, Any] | None
+    current_decision: "DecisionResponse | None" = None
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# DAB-38 — Decision schemas
+# ---------------------------------------------------------------------------
+
+_DECISION_TYPES = Literal["confirm_identifier", "apply_fix", "ignore_field"]
+_FIX_TYPES = Literal["uom_alias_normalise", "trim_whitespace", "standardise_case"]
+
+
+class DecisionCreateRequest(BaseModel):
+    field_name: str
+    decision_type: _DECISION_TYPES
+    fix_type: _FIX_TYPES | None = None
+    fix_params: dict[str, Any] | None = None
+
+
+class DecisionResponse(BaseModel):
+    decision_id: uuid.UUID
+    field_name: str
+    decision_type: str
+    fix_type: str | None
+    fix_params: dict[str, Any] | None
+    status: str
+    decided_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ProjectDecisionsResponse(BaseModel):
+    confirmed_identifiers: list[DecisionResponse]
+    applied_fixes: list[DecisionResponse]

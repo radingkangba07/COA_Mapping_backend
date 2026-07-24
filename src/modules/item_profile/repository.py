@@ -1,12 +1,17 @@
 from datetime import datetime
 from uuid import UUID
 
-from coa_db_models.profiling.models import ItemFieldProfile, ItemProfileRun
+from coa_db_models.profiling.models import (
+    ItemFieldProfile,
+    ItemProfileAudit,
+    ItemProfileDecision,
+    ItemProfileRun,
+)
 from sqlalchemy import Float, case, delete, func, insert, or_, select
 from sqlalchemy import cast as sa_cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import NotFoundError
+from src.core.exceptions import ConflictError, NotFoundError
 
 
 class ItemProfileRunRepository:
@@ -179,3 +184,127 @@ class ItemFieldProfileRepository:
             "uniqueness_pct": uniqueness,
             "pattern_conformance_pct": conformance,
         }
+
+
+class ItemProfileDecisionRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_pending(self, run_id: UUID, field_name: str) -> ItemProfileDecision | None:
+        result = await self.session.execute(
+            select(ItemProfileDecision).where(
+                ItemProfileDecision.run_id == run_id,
+                ItemProfileDecision.field_name == field_name,
+                ItemProfileDecision.status == "pending",
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def create_decision(
+        self,
+        run_id: UUID,
+        field_name: str,
+        decision_type: str,
+        fix_type: str | None,
+        fix_params: dict | None,
+        user_id: UUID,
+    ) -> ItemProfileDecision:
+        existing = await self.get_pending(run_id, field_name)
+        if existing and existing.action == decision_type:
+            raise ConflictError(
+                f"A pending '{decision_type}' decision already exists for field '{field_name}'"
+            )
+        if existing:
+            raise ConflictError(
+                f"Field '{field_name}' already has a pending decision; undo it before creating a new one"
+            )
+
+        decision = ItemProfileDecision(
+            run_id=run_id,
+            field_name=field_name,
+            action=decision_type,
+            fix_type=fix_type,
+            transformation_config=fix_params,
+            status="pending",
+            decided_by=user_id,
+        )
+        self.session.add(decision)
+        await self.session.flush()
+        await self.session.refresh(decision)
+
+        audit = ItemProfileAudit(
+            decision_id=decision.id,
+            changed_by=user_id,
+            previous_state=None,
+            new_state={
+                "action": decision_type,
+                "fix_type": fix_type,
+                "fix_params": fix_params,
+                "status": "pending",
+            },
+        )
+        self.session.add(audit)
+        await self.session.flush()
+        return decision
+
+    async def list_decisions(self, run_id: UUID) -> list[ItemProfileDecision]:
+        result = await self.session.execute(
+            select(ItemProfileDecision)
+            .where(ItemProfileDecision.run_id == run_id)
+            .order_by(ItemProfileDecision.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_decision_or_404(self, decision_id: UUID) -> ItemProfileDecision:
+        decision = await self.session.get(ItemProfileDecision, decision_id)
+        if decision is None:
+            raise NotFoundError(f"Decision {decision_id} not found")
+        return decision
+
+    async def undo_decision(self, decision_id: UUID, user_id: UUID) -> ItemProfileDecision:
+        decision = await self.get_decision_or_404(decision_id)
+        if decision.status == "undone":
+            raise ConflictError("Decision is already undone")
+
+        previous_state = {
+            "action": decision.action,
+            "fix_type": decision.fix_type,
+            "fix_params": decision.transformation_config,
+            "status": decision.status,
+        }
+        decision.status = "undone"
+        await self.session.flush()
+
+        audit = ItemProfileAudit(
+            decision_id=decision.id,
+            changed_by=user_id,
+            previous_state=previous_state,
+            new_state={**previous_state, "status": "undone"},
+        )
+        self.session.add(audit)
+        await self.session.flush()
+        return decision
+
+    async def list_project_decisions(self, project_id: UUID) -> list[ItemProfileDecision]:
+        result = await self.session.execute(
+            select(ItemProfileDecision)
+            .join(ItemProfileRun, ItemProfileDecision.run_id == ItemProfileRun.id)
+            .where(
+                ItemProfileRun.project_id == project_id,
+                ItemProfileDecision.status == "pending",
+                ItemProfileDecision.action.in_(["confirm_identifier", "apply_fix"]),
+            )
+            .order_by(ItemProfileDecision.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_pending_apply_fix(self, run_id: UUID, field_name: str) -> ItemProfileDecision | None:
+        result = await self.session.execute(
+            select(ItemProfileDecision).where(
+                ItemProfileDecision.run_id == run_id,
+                ItemProfileDecision.field_name == field_name,
+                ItemProfileDecision.action == "apply_fix",
+                ItemProfileDecision.status == "pending",
+            )
+        )
+        return result.scalar_one_or_none()
