@@ -90,6 +90,7 @@ class FieldDetailResponse(BaseModel):
     anomaly_examples: list[str] | None
     stats: dict[str, Any] | None
     sample_values: dict[str, Any] | None
+    odoo_target: dict[str, Any] | None = None
     current_decision: "DecisionResponse | None" = None
 
     model_config = {"from_attributes": True}

@@ -1884,3 +1884,103 @@ async def test_field_list_rejects_ingesting_run(
         f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields"
     )
     assert resp.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# DAB-41 — Odoo target schema knowledge: unit tests for odoo_mapper
+# ---------------------------------------------------------------------------
+
+from src.modules.item_profile.odoo_mapper import classify_odoo_target, reload_odoo_map
+
+
+class TestOdooMapper:
+    def setup_method(self):
+        reload_odoo_map()
+
+    def test_strong_fit_identifier_string(self):
+        result = classify_odoo_target("identifier_candidate", "string")
+        assert result is not None
+        assert result["fit"] == "strong"
+        assert result["field"] in ("default_code", "barcode")
+
+    def test_strong_fit_numeric_measure_decimal(self):
+        result = classify_odoo_target("numeric_measure", "decimal")
+        assert result is not None
+        assert result["fit"] == "strong"
+        assert result["field"] in ("list_price", "standard_price")
+
+    def test_strong_fit_value_list_string(self):
+        result = classify_odoo_target("value_list", "string")
+        assert result is not None
+        assert result["fit"] == "strong"
+        assert result["field"] in ("type", "uom_id", "categ_id")
+
+    def test_strong_fit_free_text_string(self):
+        result = classify_odoo_target("free_text", "string")
+        assert result is not None
+        assert result["fit"] == "strong"
+        assert result["field"] == "name"
+
+    def test_partial_fit_role_matches_type_differs(self):
+        # identifier_candidate with integer type — role matches but type won't
+        result = classify_odoo_target("identifier_candidate", "integer")
+        assert result is not None
+        assert result["fit"] == "partial"
+
+    def test_partial_fit_type_matches_role_differs(self):
+        # decimal type but wrong role — should partial-match a numeric_measure field
+        result = classify_odoo_target("free_text", "decimal")
+        assert result is not None
+        assert result["fit"] == "partial"
+
+    def test_no_fit_unknown_role_and_type(self):
+        result = classify_odoo_target("date_temporal", "date")
+        assert result is None
+
+    def test_no_fit_none_role_none_type(self):
+        result = classify_odoo_target(None, None)
+        assert result is None
+
+    def test_barcode_ean13_pattern_detected(self):
+        pattern_summary = {"dominant": "0000000000000", "dominant_pct": 0.95, "variants": 1}
+        result = classify_odoo_target("identifier_candidate", "string", pattern_summary)
+        assert result is not None
+        assert result["field"] == "barcode"
+        assert "EAN-13" in result["notes"]
+
+    def test_barcode_upca_pattern_detected(self):
+        pattern_summary = {"dominant": "000000000000", "dominant_pct": 0.90, "variants": 1}
+        result = classify_odoo_target("identifier_candidate", "string", pattern_summary)
+        assert result is not None
+        assert result["field"] == "barcode"
+        assert "UPC-A" in result["notes"]
+
+    def test_barcode_non_digit_pattern_no_suffix(self):
+        pattern_summary = {"dominant": "AAAA000", "dominant_pct": 0.80, "variants": 2}
+        result = classify_odoo_target("identifier_candidate", "string", pattern_summary)
+        assert result is not None
+        assert "EAN-13" not in result["notes"]
+        assert "UPC-A" not in result["notes"]
+
+    def test_reload_clears_cache(self):
+        classify_odoo_target("free_text", "string")
+        reload_odoo_map()
+        result = classify_odoo_target("free_text", "string")
+        assert result is not None
+        assert result["field"] == "name"
+
+    def test_result_has_required_keys(self):
+        result = classify_odoo_target("numeric_measure", "decimal")
+        assert result is not None
+        assert set(result.keys()) >= {"field", "label", "fit", "notes"}
+
+    def test_yaml_driven_all_fields_have_expected_roles(self):
+        from src.modules.item_profile.odoo_mapper import _load_odoo_map
+        valid_roles = {
+            "identifier_candidate", "free_text", "value_list", "numeric_measure",
+            "date_temporal", "cross_subsidiary_identifier", "ambiguous",
+        }
+        for entry in _load_odoo_map():
+            assert "expected_role" in entry
+            assert "expected_type" in entry
+            assert entry["expected_role"] in valid_roles

@@ -235,6 +235,7 @@ async def get_item_profile_field(
         anomaly_examples=fp.anomaly_examples,
         stats=fp.stats,
         sample_values=fp.sample_values,
+        odoo_target=fp.odoo_target,
         current_decision=current_decision,
     )
 
@@ -368,6 +369,17 @@ async def execute_decision(
         status=decision.status,
         rows_affected=rows_affected,
     )
+
+
+@router.post(
+    "/admin/reload-odoo-map",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["admin"],
+)
+async def reload_odoo_map(user: User = Depends(get_current_user)):
+    """Clear the cached Odoo field map so it is reloaded from disk on the next request."""
+    from src.modules.item_profile.odoo_mapper import reload_odoo_map as _reload
+    _reload()
 
 
 @router.get(

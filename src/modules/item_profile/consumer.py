@@ -18,6 +18,7 @@ from src.modules.item_profile.service import (
     load_full_csv,
     _count_rows,
 )
+from src.modules.item_profile.odoo_mapper import classify_odoo_target
 from src.modules.storage.s3_provider import S3Provider
 
 logger = logging.getLogger(__name__)
@@ -190,6 +191,11 @@ class ItemProfileConsumer:
                     "semantic_role": s.semantic_role,
                     "confidence_score": s.confidence_score,
                     "evidence": s.evidence or None,
+                    "odoo_target": classify_odoo_target(
+                        s.semantic_role,
+                        s.detected_type,
+                        s.pattern_summary,
+                    ),
                     "stats": {
                         "null_pct": s.null_pct,
                         "uniqueness_pct": s.uniqueness_pct,
