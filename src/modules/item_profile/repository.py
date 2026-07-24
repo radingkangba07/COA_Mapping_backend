@@ -37,6 +37,7 @@ class ItemProfileRunRepository:
         status: str,
         source_row_count: int | None = None,
         field_count: int | None = None,
+        fields_processed: int | None = None,
         error_detail: str | None = None,
         completed_at: datetime | None = None,
         duplicate_summary: dict | None = None,
@@ -50,6 +51,8 @@ class ItemProfileRunRepository:
             run.source_row_count = source_row_count
         if field_count is not None:
             run.field_count = field_count
+        if fields_processed is not None:
+            run.fields_processed = fields_processed
         if error_detail is not None:
             run.error_detail = error_detail
         if completed_at is not None:

@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -107,15 +108,31 @@ async def get_item_profile_run(
 ):
     run = await run_repo.get_run_or_404(run_id)
     coverage_data = await field_repo.compute_coverage(run_id)
+
+    estimated_completion = None
+    if (
+        run.started_at
+        and run.fields_processed
+        and run.field_count
+        and run.fields_processed > 0
+        and run.status not in ("complete", "failed")
+    ):
+        elapsed = (datetime.now(UTC) - run.started_at).total_seconds()
+        rate = elapsed / run.fields_processed
+        remaining = (run.field_count - run.fields_processed) * rate
+        estimated_completion = datetime.now(UTC) + timedelta(seconds=max(remaining, 0))
+
     return RunDetailResponse(
         run_id=run.id,
         status=run.status,
         row_count=run.source_row_count,
         field_count=run.field_count,
         migration_key_field=run.migration_key_field,
+        fields_processed=run.fields_processed,
         coverage=CoverageMetrics(**coverage_data),
         created_at=run.created_at,
         completed_at=run.completed_at,
+        estimated_completion=estimated_completion,
     )
 
 
@@ -139,7 +156,7 @@ async def list_item_profile_fields(
     field_repo: ItemFieldProfileRepository = Depends(get_field_repo),
 ):
     run = await run_repo.get_run_or_404(run_id)
-    if run.status != "profiling_complete":
+    if run.status != "complete":
         raise ConflictError(f"Run {run_id} is not complete (status: {run.status})")
 
     fields, total = await field_repo.list_fields(
@@ -184,7 +201,7 @@ async def get_item_profile_field(
     decision_repo: ItemProfileDecisionRepository = Depends(get_decision_repo),
 ):
     run = await run_repo.get_run_or_404(run_id)
-    if run.status != "profiling_complete":
+    if run.status != "complete":
         raise ConflictError(f"Run {run_id} is not complete (status: {run.status})")
 
     fp = await field_repo.get_field_or_404(run_id, field_name)

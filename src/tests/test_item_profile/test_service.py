@@ -1,4 +1,4 @@
-"""Unit tests for ItemProfileService — DAB-33 ingestion, DAB-34 stats, DAB-35 pattern/anomaly, DAB-36 semantic roles, DAB-37 profile API, DAB-38 decision API, DAB-39 fix engine."""
+"""Unit tests for ItemProfileService — DAB-33 ingestion, DAB-34 stats, DAB-35 pattern/anomaly, DAB-36 semantic roles, DAB-37 profile API, DAB-38 decision API, DAB-39 fix engine, DAB-40 job orchestration."""
 
 import io
 import uuid
@@ -820,7 +820,7 @@ async def _seed_completed_run(
             update(ItemProfileRun)
             .where(ItemProfileRun.id == run_id)
             .values(
-                status="profiling_complete",
+                status="complete",
                 source_row_count=500,
                 field_count=3,
                 completed_at=datetime.now(UTC),
@@ -929,7 +929,7 @@ async def test_get_run_detail_with_coverage(authenticated_client: AsyncClient, s
     assert resp.status_code == 200
     data = resp.json()
     assert data["run_id"] == run_id
-    assert data["status"] == "profiling_complete"
+    assert data["status"] == "complete"
     assert data["row_count"] == 500
     assert data["field_count"] == 3
     cov = data["coverage"]
@@ -1723,3 +1723,164 @@ async def test_undo_applied_fix_restores_stats(
     top_values = field_resp.json()["stats"]["top_values"]
     values = [tv["value"] for tv in top_values]
     assert " active " in values
+
+
+# ---------------------------------------------------------------------------
+# DAB-40 — Job orchestration: consumer unit tests and API tests
+# ---------------------------------------------------------------------------
+
+from src.modules.item_profile.consumer import (
+    _STATUS_COMPLETE,
+    _STATUS_FAILED,
+    _STATUS_PATTERNS,
+    _STATUS_ROLES,
+    _STATUS_STATISTICS,
+    _TERMINAL_STATUSES,
+)
+
+
+class TestConsumerConstants:
+    def test_terminal_statuses_set(self):
+        assert "complete" in _TERMINAL_STATUSES
+        assert "failed" in _TERMINAL_STATUSES
+
+    def test_stage_labels_are_distinct(self):
+        stages = [_STATUS_STATISTICS, _STATUS_PATTERNS, _STATUS_ROLES, _STATUS_COMPLETE]
+        assert len(stages) == len(set(stages))
+
+    def test_complete_matches_router_expectation(self):
+        assert _STATUS_COMPLETE == "complete"
+
+
+class TestConsumerIdempotency:
+    @pytest.mark.asyncio
+    async def test_skips_already_complete_run(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from types import SimpleNamespace
+
+        run = SimpleNamespace(
+            id=uuid.uuid4(),
+            status="complete",
+            source_file_ref="some/file.csv",
+        )
+        session = AsyncMock()
+        session.get = AsyncMock(return_value=run)
+
+        consumer = _make_consumer_with_session(session)
+        await consumer._handle_run_created({"run_id": str(run.id)})
+
+        # Store should never be called for an already-complete run
+        assert not consumer.store.get_object.called
+
+    @pytest.mark.asyncio
+    async def test_skips_already_failed_run(self):
+        run = SimpleNamespace(
+            id=uuid.uuid4(),
+            status="failed",
+            source_file_ref="some/file.csv",
+        )
+        session = AsyncMock()
+        session.get = AsyncMock(return_value=run)
+
+        consumer = _make_consumer_with_session(session)
+        await consumer._handle_run_created({"run_id": str(run.id)})
+
+        assert not consumer.store.get_object.called
+
+    @pytest.mark.asyncio
+    async def test_skips_run_with_no_source_file(self):
+        run = SimpleNamespace(
+            id=uuid.uuid4(),
+            status="ingesting",
+            source_file_ref=None,
+        )
+        session = AsyncMock()
+        session.get = AsyncMock(return_value=run)
+
+        consumer = _make_consumer_with_session(session)
+        await consumer._handle_run_created({"run_id": str(run.id)})
+
+        assert not consumer.store.get_object.called
+
+    @pytest.mark.asyncio
+    async def test_skips_missing_run(self):
+        session = AsyncMock()
+        session.get = AsyncMock(return_value=None)
+
+        consumer = _make_consumer_with_session(session)
+        # Should not raise
+        await consumer._handle_run_created({"run_id": str(uuid.uuid4())})
+
+
+def _make_consumer_with_session(session):
+    from src.modules.item_profile.consumer import ItemProfileConsumer
+    from unittest.mock import MagicMock
+
+    store = MagicMock()
+    store.get_object = MagicMock()
+
+    return ItemProfileConsumer(
+        jetstream=MagicMock(),
+        run_repo=MagicMock(),
+        field_repo=MagicMock(),
+        store=store,
+        session=session,
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_detail_includes_fields_processed(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "fields_processed" in data
+    assert "estimated_completion" in data
+
+
+@pytest.mark.asyncio
+async def test_run_detail_estimated_completion_null_when_complete(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}"
+    )
+    assert resp.status_code == 200
+    # Complete runs have no estimated completion
+    assert resp.json()["estimated_completion"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_detail_status_in_progress(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    """Run status is visible immediately after creating an in-progress run."""
+    project_id, run_id = await _create_project_and_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ingesting"
+    assert data["estimated_completion"] is None
+
+
+@pytest.mark.asyncio
+async def test_field_list_rejects_ingesting_run(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    """Field list endpoint returns 409 when run is not yet complete."""
+    project_id, run_id = await _create_project_and_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields"
+    )
+    assert resp.status_code == 409

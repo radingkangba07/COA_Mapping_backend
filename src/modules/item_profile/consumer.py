@@ -16,10 +16,21 @@ from src.modules.item_profile.service import (
     detect_cross_subsidiary_splits,
     detect_duplicates,
     load_full_csv,
+    _count_rows,
 )
 from src.modules.storage.s3_provider import S3Provider
 
 logger = logging.getLogger(__name__)
+
+# Statuses that indicate the run is already terminal — skip on duplicate event.
+_TERMINAL_STATUSES = frozenset(["complete", "failed"])
+
+# Staged pipeline status labels.
+_STATUS_STATISTICS = "profiling_statistics"
+_STATUS_PATTERNS = "profiling_patterns"
+_STATUS_ROLES = "profiling_roles"
+_STATUS_COMPLETE = "complete"
+_STATUS_FAILED = "failed"
 
 
 class ItemProfileConsumer:
@@ -96,6 +107,11 @@ class ItemProfileConsumer:
             logger.warning("Run %s not found, skipping", run_id)
             return
 
+        # Idempotency: duplicate events for already-terminal runs are silently skipped.
+        if run.status in _TERMINAL_STATUSES:
+            logger.info("Run %s already %s, skipping duplicate event", run_id, run.status)
+            return
+
         if not run.source_file_ref:
             logger.warning("Run %s has no source_file_ref, skipping", run_id)
             return
@@ -105,11 +121,48 @@ class ItemProfileConsumer:
                 raise RuntimeError("Storage not configured")
 
             settings = get_settings()
+
+            # ----------------------------------------------------------------
+            # Stage 1: Field statistics
+            # ----------------------------------------------------------------
             raw, _ = self.store.get_object(run.source_file_ref)
             df = load_full_csv(raw)
+            field_count = len(df.columns)
+            row_count = _count_rows(raw)
+
+            await self.run_repo.update_run(
+                run_id,
+                status=_STATUS_STATISTICS,
+                source_row_count=row_count,
+                field_count=field_count,
+                fields_processed=0,
+            )
+            await self.session.commit()
+            logger.info("Run %s stage 1/3: computing field statistics (%d fields)", run_id, field_count)
+
             all_stats = compute_all_stats(df)
+
+            # ----------------------------------------------------------------
+            # Stage 2: Pattern and anomaly + duplicate/cross-subsidiary detection
+            # ----------------------------------------------------------------
+            await self.run_repo.update_run(
+                run_id,
+                status=_STATUS_PATTERNS,
+                fields_processed=len(all_stats),
+            )
+            await self.session.commit()
+            logger.info("Run %s stage 2/3: detecting patterns and duplicates", run_id)
+
             dup_summary = detect_duplicates(df)
             cross_sub_summary = detect_cross_subsidiary_splits(df)
+
+            # ----------------------------------------------------------------
+            # Stage 3: Semantic role inference
+            # ----------------------------------------------------------------
+            await self.run_repo.update_run(run_id, status=_STATUS_ROLES)
+            await self.session.commit()
+            logger.info("Run %s stage 3/3: inferring semantic roles", run_id)
+
             apply_semantic_roles(
                 all_stats,
                 cross_sub_summary,
@@ -117,7 +170,9 @@ class ItemProfileConsumer:
                 settings.profile_identifier_max_null_pct,
             )
 
-            # Idempotent: remove previous results for this run before inserting
+            # ----------------------------------------------------------------
+            # Persist field profiles and mark complete
+            # ----------------------------------------------------------------
             await self.field_repo.delete_by_run(run_id)
             await self.field_repo.bulk_create([
                 {
@@ -153,16 +208,20 @@ class ItemProfileConsumer:
 
             await self.run_repo.update_run(
                 run_id,
-                status="profiling_complete",
+                status=_STATUS_COMPLETE,
                 completed_at=datetime.now(UTC),
+                fields_processed=len(all_stats),
                 duplicate_summary=dup_summary,
                 cross_subsidiary_summary=cross_sub_summary,
             )
             await self.session.commit()
-            logger.info("Run %s profiling complete: %d fields", run_id, len(all_stats))
+            logger.info(
+                "Run %s complete: %d fields profiled from %d rows",
+                run_id, len(all_stats), row_count,
+            )
 
         except Exception as exc:
-            logger.exception("Field stats computation failed for run %s", run_id)
-            await self.run_repo.update_run(run_id, status="failed", error_detail=str(exc))
+            logger.exception("Field profiling failed for run %s", run_id)
+            await self.run_repo.update_run(run_id, status=_STATUS_FAILED, error_detail=str(exc))
             await self.session.commit()
             raise

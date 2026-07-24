@@ -44,9 +44,11 @@ class RunDetailResponse(BaseModel):
     row_count: int | None
     field_count: int | None
     migration_key_field: str | None = None
+    fields_processed: int | None = None
     coverage: CoverageMetrics
     created_at: datetime
     completed_at: datetime | None
+    estimated_completion: datetime | None = None
 
     model_config = {"from_attributes": True}
 
