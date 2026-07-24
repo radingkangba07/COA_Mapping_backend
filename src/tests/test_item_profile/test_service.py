@@ -1,4 +1,4 @@
-"""Unit tests for ItemProfileService — DAB-33 ingestion, DAB-34 stats, DAB-35 pattern/anomaly, DAB-36 semantic roles, DAB-37 profile API, DAB-38 decision API."""
+"""Unit tests for ItemProfileService — DAB-33 ingestion, DAB-34 stats, DAB-35 pattern/anomaly, DAB-36 semantic roles, DAB-37 profile API, DAB-38 decision API, DAB-39 fix engine."""
 
 import io
 import uuid
@@ -1459,3 +1459,267 @@ async def test_run_detail_includes_migration_key_field(
     assert resp.status_code == 200
     assert "migration_key_field" in resp.json()
     assert resp.json()["migration_key_field"] is None
+
+
+# ---------------------------------------------------------------------------
+# DAB-39 — Fix engine unit tests
+# ---------------------------------------------------------------------------
+
+from src.modules.item_profile.fix_engine import apply_fix, _load_uom_aliases
+
+
+class TestFixEngineUnit:
+    def _tv(self, pairs: list[tuple]) -> list[dict]:
+        return [{"value": v, "count": c} for v, c in pairs]
+
+    def test_trim_whitespace_strips_values(self):
+        tv = self._tv([(" EA ", 100), ("Each", 50), (" Unit ", 30)])
+        new_tv, rows_affected, log = apply_fix(tv, "trim_whitespace")
+        values = {e["value"] for e in new_tv}
+        assert "EA" in values
+        assert " EA " not in values
+        assert rows_affected == 130  # " EA " + " Unit "
+
+    def test_trim_whitespace_merges_duplicates(self):
+        tv = self._tv([(" ea", 40), ("ea ", 60), ("ea", 10)])
+        new_tv, rows_affected, log = apply_fix(tv, "trim_whitespace")
+        assert len(new_tv) == 1
+        assert new_tv[0]["value"] == "ea"
+        assert new_tv[0]["count"] == 110
+        assert rows_affected == 100  # " ea" + "ea " both changed
+
+    def test_standardise_case_lower(self):
+        tv = self._tv([("EA", 100), ("Each", 50)])
+        new_tv, rows_affected, log = apply_fix(tv, "standardise_case", {"case": "lower"})
+        values = {e["value"] for e in new_tv}
+        assert "ea" in values
+        assert "each" in values
+        assert rows_affected == 150
+
+    def test_standardise_case_upper(self):
+        tv = self._tv([("unit", 200)])
+        new_tv, rows_affected, log = apply_fix(tv, "standardise_case", {"case": "upper"})
+        assert new_tv[0]["value"] == "UNIT"
+        assert rows_affected == 200
+
+    def test_standardise_case_title(self):
+        tv = self._tv([("unit price", 10)])
+        new_tv, rows_affected, log = apply_fix(tv, "standardise_case", {"case": "title"})
+        assert new_tv[0]["value"] == "Unit Price"
+
+    def test_uom_alias_normalise_maps_aliases(self):
+        tv = self._tv([("EA", 300), ("Each", 200), ("Unit", 100)])
+        new_tv, rows_affected, log = apply_fix(tv, "uom_alias_normalise")
+        values = {e["value"] for e in new_tv}
+        assert "Unit" in values
+        assert "EA" not in values
+        assert "Each" not in values
+        assert rows_affected == 500  # EA + Each both changed
+
+    def test_uom_alias_normalise_unknown_value_unchanged(self):
+        tv = self._tv([("WEIRD_UNIT", 50)])
+        new_tv, rows_affected, log = apply_fix(tv, "uom_alias_normalise")
+        assert new_tv[0]["value"] == "WEIRD_UNIT"
+        assert rows_affected == 0
+
+    def test_custom_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            apply_fix([], "custom")
+
+    def test_change_log_records_per_unique_value(self):
+        tv = self._tv([("EA", 300), ("Each", 200), ("Unit", 100)])
+        _, _, log = apply_fix(tv, "uom_alias_normalise")
+        assert len(log) == 2
+        befores = {e["before"] for e in log}
+        assert befores == {"EA", "Each"}
+
+    def test_uom_yaml_loads_correctly(self):
+        aliases = _load_uom_aliases()
+        assert aliases.get("EA") == "Unit"
+        assert aliases.get("Each") == "Unit"
+        assert aliases.get("each") == "Unit"
+        assert aliases.get("kg") == "kg"
+
+    def test_no_change_rows_affected_zero(self):
+        tv = self._tv([("already_trimmed", 100)])
+        _, rows_affected, log = apply_fix(tv, "trim_whitespace")
+        assert rows_affected == 0
+        assert log == []
+
+
+# ---------------------------------------------------------------------------
+# DAB-39 — Fix execution endpoint integration tests
+# ---------------------------------------------------------------------------
+
+async def _create_apply_fix_decision(
+    client: AsyncClient,
+    project_id: str,
+    run_id: str,
+    field_name: str = "account_type",
+    fix_type: str = "trim_whitespace",
+) -> str:
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": field_name, "decision_type": "apply_fix", "fix_type": fix_type},
+    )
+    assert resp.status_code == 201
+    return resp.json()["decision_id"]
+
+
+@pytest.mark.asyncio
+async def test_execute_fix_trim_whitespace(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    # Seed whitespace in top_values
+    from src.core.database import get_db as _get_db
+    from src.main import app
+    db_override = app.dependency_overrides.get(_get_db)
+    async for session in db_override():
+        from coa_db_models.profiling.models import ItemFieldProfile
+        from sqlalchemy import update, select
+        result = await session.execute(
+            select(ItemFieldProfile).where(
+                ItemFieldProfile.run_id == run_id,
+                ItemFieldProfile.field_name == "account_type",
+            )
+        )
+        fp = result.scalar_one()
+        fp.stats = {**fp.stats, "top_values": [
+            {"value": " active ", "count": 400},
+            {"value": "inactive", "count": 100},
+        ]}
+        await session.commit()
+        break
+
+    decision_id = await _create_apply_fix_decision(
+        authenticated_client, project_id, run_id, "account_type", "trim_whitespace"
+    )
+
+    resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}/execute"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "applied"
+    assert data["rows_affected"] == 400
+    assert data["fix_type"] == "trim_whitespace"
+
+
+@pytest.mark.asyncio
+async def test_execute_fix_idempotent(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+    decision_id = await _create_apply_fix_decision(
+        authenticated_client, project_id, run_id, "account_type", "trim_whitespace"
+    )
+
+    resp1 = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}/execute"
+    )
+    resp2 = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}/execute"
+    )
+    assert resp1.status_code == 200
+    assert resp2.status_code == 200
+    assert resp2.json()["status"] == "applied"
+
+
+@pytest.mark.asyncio
+async def test_execute_missing_decision_returns_404(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+    fake_id = "00000000-0000-0000-0000-000000000000"
+
+    resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{fake_id}/execute"
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_execute_non_apply_fix_decision_returns_409(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    create_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    decision_id = create_resp.json()["decision_id"]
+
+    resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}/execute"
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_execute_custom_fix_type_returns_501(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    create_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_type", "decision_type": "apply_fix", "fix_type": "custom"},
+    )
+    decision_id = create_resp.json()["decision_id"]
+
+    resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}/execute"
+    )
+    assert resp.status_code == 501
+
+
+@pytest.mark.asyncio
+async def test_undo_applied_fix_restores_stats(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    # Seed whitespace values
+    from src.core.database import get_db as _get_db
+    from src.main import app
+    db_override = app.dependency_overrides.get(_get_db)
+    original_top_values = [{"value": " active ", "count": 400}, {"value": "inactive", "count": 100}]
+    async for session in db_override():
+        from coa_db_models.profiling.models import ItemFieldProfile
+        from sqlalchemy import select
+        result = await session.execute(
+            select(ItemFieldProfile).where(
+                ItemFieldProfile.run_id == run_id,
+                ItemFieldProfile.field_name == "account_type",
+            )
+        )
+        fp = result.scalar_one()
+        fp.stats = {**fp.stats, "top_values": original_top_values}
+        await session.commit()
+        break
+
+    decision_id = await _create_apply_fix_decision(
+        authenticated_client, project_id, run_id, "account_type", "trim_whitespace"
+    )
+
+    await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}/execute"
+    )
+
+    undo_resp = await authenticated_client.delete(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}"
+    )
+    assert undo_resp.status_code == 200
+    assert undo_resp.json()["status"] == "undone"
+
+    # Verify field stats restored
+    field_resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/fields/account_type"
+    )
+    assert field_resp.status_code == 200
+    top_values = field_resp.json()["stats"]["top_values"]
+    values = [tv["value"] for tv in top_values]
+    assert " active " in values

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -98,7 +98,7 @@ class FieldDetailResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 _DECISION_TYPES = Literal["confirm_identifier", "apply_fix", "ignore_field"]
-_FIX_TYPES = Literal["uom_alias_normalise", "trim_whitespace", "standardise_case"]
+_FIX_TYPES = Literal["uom_alias_normalise", "trim_whitespace", "standardise_case", "custom"]
 
 
 class DecisionCreateRequest(BaseModel):

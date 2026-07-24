@@ -293,8 +293,9 @@ async def undo_decision(
     user: User = Depends(get_current_user),
     _access=Depends(require_project_access("editor")),
     decision_repo: ItemProfileDecisionRepository = Depends(get_decision_repo),
+    field_repo: ItemFieldProfileRepository = Depends(get_field_repo),
 ):
-    decision = await decision_repo.undo_decision(decision_id, user.id)
+    decision = await decision_repo.undo_decision(decision_id, user.id, field_repo=field_repo)
     await decision_repo.session.commit()
     return _decision_response(decision)
 
@@ -311,6 +312,7 @@ async def execute_decision(
     _access=Depends(require_project_access("editor")),
     decision_repo: ItemProfileDecisionRepository = Depends(get_decision_repo),
     run_repo: ItemProfileRunRepository = Depends(get_run_repo),
+    field_repo: ItemFieldProfileRepository = Depends(get_field_repo),
 ):
     decision = await decision_repo.get_decision_or_404(decision_id)
 
@@ -327,7 +329,28 @@ async def execute_decision(
             rows_affected=0,
         )
 
-    raise ConflictError(f"Decision action '{decision.action}' does not support execute on this branch")
+    if decision.fix_type == "custom":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=501, detail="custom fix type is not yet implemented")
+
+    try:
+        decision, rows_affected = await decision_repo.execute_fix(
+            decision_id, user.id, field_repo
+        )
+    except AppError:
+        raise
+    except NotImplementedError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=501, detail=str(exc))
+
+    await decision_repo.session.commit()
+    return ExecuteResponse(
+        decision_id=decision.id,
+        field_name=decision.field_name,
+        fix_type=decision.fix_type,
+        status=decision.status,
+        rows_affected=rows_affected,
+    )
 
 
 @router.get(

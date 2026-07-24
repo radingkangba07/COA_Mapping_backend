@@ -261,10 +261,18 @@ class ItemProfileDecisionRepository:
             raise NotFoundError(f"Decision {decision_id} not found")
         return decision
 
-    async def undo_decision(self, decision_id: UUID, user_id: UUID) -> ItemProfileDecision:
+    async def undo_decision(
+        self,
+        decision_id: UUID,
+        user_id: UUID,
+        field_repo: "ItemFieldProfileRepository | None" = None,
+    ) -> ItemProfileDecision:
         decision = await self.get_decision_or_404(decision_id)
         if decision.status == "undone":
             raise ConflictError("Decision is already undone")
+
+        if decision.status == "applied" and field_repo is not None:
+            await self._reverse_applied_fix(decision, user_id, field_repo)
 
         previous_state = {
             "action": decision.action,
@@ -284,6 +292,98 @@ class ItemProfileDecisionRepository:
         self.session.add(audit)
         await self.session.flush()
         return decision
+
+    async def _reverse_applied_fix(
+        self,
+        decision: ItemProfileDecision,
+        user_id: UUID,
+        field_repo: "ItemFieldProfileRepository",
+    ) -> None:
+        """Restore field stats to pre-fix state using the stored audit previous_state."""
+        result = await self.session.execute(
+            select(ItemProfileAudit)
+            .where(ItemProfileAudit.decision_id == decision.id)
+            .where(ItemProfileAudit.new_state["action"].astext == "fix_applied")
+            .order_by(ItemProfileAudit.changed_at.desc())
+            .limit(1)
+        )
+        apply_audit = result.scalar_one_or_none()
+        if apply_audit is None or apply_audit.previous_state is None:
+            return
+
+        fp = await field_repo.get_field(decision.run_id, decision.field_name)
+        if fp is None:
+            return
+
+        prev = apply_audit.previous_state
+        fp.stats = prev.get("stats")
+        if prev.get("distinct_count") is not None:
+            fp.distinct_count = prev["distinct_count"]
+        await self.session.flush()
+
+    async def execute_fix(
+        self,
+        decision_id: UUID,
+        user_id: UUID,
+        field_repo: "ItemFieldProfileRepository",
+    ) -> tuple[ItemProfileDecision, int]:
+        """Execute an approved apply_fix decision. Idempotent — safe to call twice."""
+        from src.modules.item_profile.fix_engine import apply_fix
+
+        decision = await self.get_decision_or_404(decision_id)
+
+        if decision.status == "applied":
+            result = await self.session.execute(
+                select(ItemProfileAudit)
+                .where(ItemProfileAudit.decision_id == decision_id)
+                .where(ItemProfileAudit.new_state["action"].astext == "fix_applied")
+                .order_by(ItemProfileAudit.changed_at.desc())
+                .limit(1)
+            )
+            apply_audit = result.scalar_one_or_none()
+            rows_affected = (apply_audit.new_state or {}).get("rows_affected", 0) if apply_audit else 0
+            return decision, rows_affected
+
+        if decision.status != "pending":
+            raise ConflictError(f"Cannot execute a decision with status '{decision.status}'")
+        if decision.action != "apply_fix":
+            raise ConflictError("Only apply_fix decisions can be executed")
+
+        fp = await field_repo.get_field_or_404(decision.run_id, decision.field_name)
+        stats = fp.stats or {}
+        top_values = stats.get("top_values") or []
+
+        new_top_values, rows_affected, change_log = apply_fix(
+            top_values,
+            decision.fix_type or "",
+            decision.transformation_config,
+        )
+
+        previous_state = {"stats": fp.stats, "distinct_count": fp.distinct_count}
+
+        new_stats = {**stats, "top_values": new_top_values}
+        fp.stats = new_stats
+        fp.distinct_count = len(new_top_values)
+        await self.session.flush()
+
+        decision.status = "applied"
+        await self.session.flush()
+
+        audit = ItemProfileAudit(
+            decision_id=decision_id,
+            changed_by=user_id,
+            previous_state=previous_state,
+            new_state={
+                "action": "fix_applied",
+                "fix_type": decision.fix_type,
+                "field_name": decision.field_name,
+                "rows_affected": rows_affected,
+                "changes": change_log,
+            },
+        )
+        self.session.add(audit)
+        await self.session.flush()
+        return decision, rows_affected
 
     async def list_project_decisions(self, project_id: UUID) -> list[ItemProfileDecision]:
         result = await self.session.execute(

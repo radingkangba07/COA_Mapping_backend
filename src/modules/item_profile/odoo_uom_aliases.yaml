@@ -1,0 +1,143 @@
+# Odoo UoM alias normalisation table
+# Format: canonical_name: [list, of, aliases]
+# Loaded at startup by the fix engine — add entries without code changes.
+
+Unit:
+  - Unit
+  - Units
+  - unit
+  - units
+  - Each
+  - each
+  - EA
+  - ea
+  - Ea
+  - pc
+  - PC
+  - Pc
+  - Pcs
+  - pcs
+  - PCS
+  - piece
+  - Piece
+  - Pieces
+  - pieces
+  - no
+  - No
+  - NO
+  - nos
+  - Nos
+  - NOS
+
+kg:
+  - kg
+  - KG
+  - Kg
+  - kilogram
+  - Kilogram
+  - kilograms
+  - Kilograms
+  - kgs
+  - KGS
+
+g:
+  - g
+  - G
+  - gram
+  - Gram
+  - grams
+  - Grams
+  - gr
+  - GR
+  - Gr
+
+l:
+  - l
+  - L
+  - liter
+  - Liter
+  - litre
+  - Litre
+  - liters
+  - litres
+  - lt
+  - LT
+  - Lt
+
+ml:
+  - ml
+  - ML
+  - Ml
+  - milliliter
+  - millilitre
+  - milliliters
+  - millilitres
+
+m:
+  - m
+  - M
+  - meter
+  - Meter
+  - metre
+  - Metre
+  - meters
+  - metres
+
+cm:
+  - cm
+  - CM
+  - Cm
+  - centimeter
+  - centimetre
+  - centimeters
+  - centimetres
+
+mm:
+  - mm
+  - MM
+  - Mm
+  - millimeter
+  - millimetre
+  - millimeters
+  - millimetres
+
+ft:
+  - ft
+  - FT
+  - Ft
+  - foot
+  - Foot
+  - feet
+  - Feet
+
+in:
+  - in
+  - IN
+  - In
+  - inch
+  - Inch
+  - inches
+  - Inches
+
+Dozen:
+  - Dozen
+  - dozen
+  - dz
+  - DZ
+  - Dz
+  - doz
+  - DOZ
+
+Box:
+  - Box
+  - box
+  - BX
+  - bx
+  - Bx
+
+Set:
+  - Set
+  - set
+  - SET
+  - sets
+  - Sets
