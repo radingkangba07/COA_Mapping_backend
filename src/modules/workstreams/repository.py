@@ -1,4 +1,3 @@
-from enum import IntEnum
 from typing import Any, NamedTuple
 from uuid import UUID
 
@@ -16,30 +15,29 @@ class StageDefinition(NamedTuple):
     weight: int
 
 
-class StageSequence(IntEnum):
-    UPLOAD_FILES = 1
-    TYPE_MAPPING = 2
-    ACCOUNT_MAPPING_1 = 3
-    ACCOUNT_MAPPING_2 = 4
-    ACCOUNT_MAPPING_3 = 5
-    PREVIEW_AND_EXPORT = 6
-
-
-class StageWeight(IntEnum):
-    HIGH = 30
-    LOW = 10
-
-
-# Default stages seeded on every new workstream. Weights sum to 100.
-# Applies to all connection methods (CSV and MCP).
+# Default stages for COA and all other workstreams. Weights sum to 100.
 DEFAULT_STAGES: list[StageDefinition] = [
-    StageDefinition("Upload Files", StageSequence.UPLOAD_FILES, StageWeight.HIGH),
-    StageDefinition("Type Mapping", StageSequence.TYPE_MAPPING, StageWeight.HIGH),
-    StageDefinition("Account Mapping: 1", StageSequence.ACCOUNT_MAPPING_1, StageWeight.LOW),
-    StageDefinition("Account Mapping: 2", StageSequence.ACCOUNT_MAPPING_2, StageWeight.LOW),
-    StageDefinition("Account Mapping: 3", StageSequence.ACCOUNT_MAPPING_3, StageWeight.LOW),
-    StageDefinition("Preview & Export", StageSequence.PREVIEW_AND_EXPORT, StageWeight.LOW),
+    StageDefinition("Upload Files",       1, 30),
+    StageDefinition("Type Mapping",       2, 30),
+    StageDefinition("Account Mapping: 1", 3, 10),
+    StageDefinition("Account Mapping: 2", 4, 10),
+    StageDefinition("Account Mapping: 3", 5, 10),
+    StageDefinition("Preview & Export",   6, 10),
 ]
+
+# Per-workstream stage overrides. Keyed by workstream name (matches _SCOPE_TO_WORKSTREAM
+# in projects/service.py). Weights must sum to 100. Falls back to DEFAULT_STAGES.
+STAGES_BY_WORKSTREAM: dict[str, list[StageDefinition]] = {
+    "Items": [
+        StageDefinition("Upload",         1, 20),
+        StageDefinition("Source Profile", 2, 20),
+        StageDefinition("Field Mapping",  3, 20),
+        StageDefinition("Values",         4, 10),
+        StageDefinition("Validation",     5, 10),
+        StageDefinition("Test Import",    6, 10),
+        StageDefinition("Import",         7, 10),
+    ],
+}
 
 
 class WorkstreamCategoryRepository(BaseRepository[WorkstreamCategory]):
@@ -121,20 +119,21 @@ class WorkstreamRepository(BaseRepository[Workstream]):
         display_code: str,
         created_by: UUID,
     ) -> Workstream:
+        stages = STAGES_BY_WORKSTREAM.get(name, DEFAULT_STAGES)
         workstream = Workstream(
             project_id=project_id,
             category_id=category_id,
             name=name,
             display_code=display_code,
             status="not_started",
-            current_stage=DEFAULT_STAGES[0].name,
+            current_stage=stages[0].name,
             created_by=created_by,
         )
         self.session.add(workstream)
         await self.session.flush()
         await self.session.refresh(workstream)
 
-        for stage in DEFAULT_STAGES:
+        for stage in stages:
             self.session.add(
                 WorkstreamStage(
                     workstream_id=workstream.id,
