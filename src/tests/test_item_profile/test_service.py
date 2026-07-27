@@ -1641,14 +1641,14 @@ async def test_execute_missing_decision_returns_404(
 
 
 @pytest.mark.asyncio
-async def test_execute_non_apply_fix_decision_returns_409(
+async def test_execute_ignore_field_decision_returns_409(
     authenticated_client: AsyncClient, seed_user: dict[str, Any]
 ):
     project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
 
     create_resp = await authenticated_client.post(
         f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
-        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+        json={"field_name": "account_code", "decision_type": "ignore_field"},
     )
     decision_id = create_resp.json()["decision_id"]
 
