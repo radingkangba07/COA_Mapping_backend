@@ -22,6 +22,7 @@ from src.modules.item_profile.schemas import (
     CoverageMetrics,
     DecisionCreateRequest,
     DecisionResponse,
+    ExecuteResponse,
     FieldDetailResponse,
     FieldListItem,
     PagedFieldsResponse,
@@ -111,6 +112,7 @@ async def get_item_profile_run(
         status=run.status,
         row_count=run.source_row_count,
         field_count=run.field_count,
+        migration_key_field=run.migration_key_field,
         coverage=CoverageMetrics(**coverage_data),
         created_at=run.created_at,
         completed_at=run.completed_at,
@@ -295,6 +297,37 @@ async def undo_decision(
     decision = await decision_repo.undo_decision(decision_id, user.id)
     await decision_repo.session.commit()
     return _decision_response(decision)
+
+
+@router.post(
+    "/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}/execute",
+    response_model=ExecuteResponse,
+)
+async def execute_decision(
+    project_id: UUID,
+    run_id: UUID,
+    decision_id: UUID,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("editor")),
+    decision_repo: ItemProfileDecisionRepository = Depends(get_decision_repo),
+    run_repo: ItemProfileRunRepository = Depends(get_run_repo),
+):
+    decision = await decision_repo.get_decision_or_404(decision_id)
+
+    if decision.action == "confirm_identifier":
+        decision = await decision_repo.execute_confirm_identifier(
+            decision_id, user.id, run_repo
+        )
+        await decision_repo.session.commit()
+        return ExecuteResponse(
+            decision_id=decision.id,
+            field_name=decision.field_name,
+            fix_type=None,
+            status=decision.status,
+            rows_affected=0,
+        )
+
+    raise ConflictError(f"Decision action '{decision.action}' does not support execute on this branch")
 
 
 @router.get(

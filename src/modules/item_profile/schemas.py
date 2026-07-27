@@ -43,6 +43,7 @@ class RunDetailResponse(BaseModel):
     status: str
     row_count: int | None
     field_count: int | None
+    migration_key_field: str | None = None
     coverage: CoverageMetrics
     created_at: datetime
     completed_at: datetime | None
@@ -122,3 +123,11 @@ class DecisionResponse(BaseModel):
 class ProjectDecisionsResponse(BaseModel):
     confirmed_identifiers: list[DecisionResponse]
     applied_fixes: list[DecisionResponse]
+
+
+class ExecuteResponse(BaseModel):
+    decision_id: uuid.UUID
+    field_name: str
+    fix_type: str | None
+    status: str
+    rows_affected: int

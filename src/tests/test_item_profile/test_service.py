@@ -1336,3 +1336,126 @@ async def test_project_decisions_excludes_undone(
     data = resp.json()
     assert data["confirmed_identifiers"] == []
     assert data["applied_fixes"] == []
+
+
+# ---------------------------------------------------------------------------
+# DAB-38 (extended) — execute confirm_identifier
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_execute_confirm_identifier_sets_migration_key(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    create_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    assert create_resp.status_code == 201
+    decision_id = create_resp.json()["decision_id"]
+
+    exec_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}/execute"
+    )
+    assert exec_resp.status_code == 200
+    data = exec_resp.json()
+    assert data["status"] == "applied"
+    assert data["field_name"] == "account_code"
+    assert data["rows_affected"] == 0
+
+    run_resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}"
+    )
+    assert run_resp.status_code == 200
+    assert run_resp.json()["migration_key_field"] == "account_code"
+
+
+@pytest.mark.asyncio
+async def test_execute_confirm_identifier_idempotent(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    create_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    decision_id = create_resp.json()["decision_id"]
+    url = f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}/execute"
+
+    first = await authenticated_client.post(url)
+    second = await authenticated_client.post(url)
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["status"] == "applied"
+
+
+@pytest.mark.asyncio
+async def test_execute_confirm_identifier_replaces_previous_key(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    d1 = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    d1_id = d1.json()["decision_id"]
+    await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{d1_id}/execute"
+    )
+
+    # Undo first, then confirm a different field
+    await authenticated_client.delete(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{d1_id}"
+    )
+    d2 = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_type", "decision_type": "confirm_identifier"},
+    )
+    d2_id = d2.json()["decision_id"]
+    await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{d2_id}/execute"
+    )
+
+    run_resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}"
+    )
+    assert run_resp.json()["migration_key_field"] == "account_type"
+
+
+@pytest.mark.asyncio
+async def test_execute_undone_decision_returns_409(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    create_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions",
+        json={"field_name": "account_code", "decision_type": "confirm_identifier"},
+    )
+    decision_id = create_resp.json()["decision_id"]
+
+    await authenticated_client.delete(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}"
+    )
+
+    exec_resp = await authenticated_client.post(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}/decisions/{decision_id}/execute"
+    )
+    assert exec_resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_run_detail_includes_migration_key_field(
+    authenticated_client: AsyncClient, seed_user: dict[str, Any]
+):
+    project_id, run_id = await _seed_completed_run(authenticated_client, seed_user)
+
+    resp = await authenticated_client.get(
+        f"/api/v1/projects/{project_id}/item-profile/runs/{run_id}"
+    )
+    assert resp.status_code == 200
+    assert "migration_key_field" in resp.json()
+    assert resp.json()["migration_key_field"] is None

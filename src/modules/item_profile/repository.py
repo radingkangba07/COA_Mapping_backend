@@ -298,6 +298,46 @@ class ItemProfileDecisionRepository:
         )
         return list(result.scalars().all())
 
+    async def execute_confirm_identifier(
+        self,
+        decision_id: UUID,
+        user_id: UUID,
+        run_repo: "ItemProfileRunRepository",
+    ) -> ItemProfileDecision:
+        """Set the run migration key field. Idempotent — safe to call twice."""
+        decision = await self.get_decision_or_404(decision_id)
+
+        if decision.status == "applied":
+            return decision
+
+        if decision.status != "pending":
+            raise ConflictError(f"Cannot execute a decision with status '{decision.status}'")
+        if decision.action != "confirm_identifier":
+            raise ConflictError("Only confirm_identifier decisions can be executed here")
+
+        run = await run_repo.get_run_or_404(decision.run_id)
+        previous_migration_key = run.migration_key_field
+
+        run.migration_key_field = decision.field_name
+        await self.session.flush()
+
+        decision.status = "applied"
+        await self.session.flush()
+
+        audit = ItemProfileAudit(
+            decision_id=decision.id,
+            changed_by=user_id,
+            previous_state={"migration_key_field": previous_migration_key},
+            new_state={
+                "action": "identifier_confirmed",
+                "field_name": decision.field_name,
+                "migration_key_field": decision.field_name,
+            },
+        )
+        self.session.add(audit)
+        await self.session.flush()
+        return decision
+
     async def get_pending_apply_fix(self, run_id: UUID, field_name: str) -> ItemProfileDecision | None:
         result = await self.session.execute(
             select(ItemProfileDecision).where(
