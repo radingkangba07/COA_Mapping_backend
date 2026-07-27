@@ -15,19 +15,19 @@ class StageDefinition(NamedTuple):
     weight: int
 
 
-# Default stages for COA and all other workstreams. Weights sum to 100.
-DEFAULT_STAGES: list[StageDefinition] = [
-    StageDefinition("Upload Files",       1, 30),
-    StageDefinition("Type Mapping",       2, 30),
-    StageDefinition("Account Mapping: 1", 3, 10),
-    StageDefinition("Account Mapping: 2", 4, 10),
-    StageDefinition("Account Mapping: 3", 5, 10),
-    StageDefinition("Preview & Export",   6, 10),
-]
-
-# Per-workstream stage overrides. Keyed by workstream name (matches _SCOPE_TO_WORKSTREAM
-# in projects/service.py). Weights must sum to 100. Falls back to DEFAULT_STAGES.
+# Per-workstream stage definitions. Keyed by workstream name (matches _SCOPE_TO_WORKSTREAM
+# in projects/service.py). Weights must sum to 100.
+# Populate each entry when its dedicated module is built.
 STAGES_BY_WORKSTREAM: dict[str, list[StageDefinition]] = {
+    # ── Master Data ────────────────────────────────────────────────────────────
+    "Chart of Accounts": [
+        StageDefinition("Upload Files",       1, 30),
+        StageDefinition("Type Mapping",       2, 30),
+        StageDefinition("Account Mapping: 1", 3, 10),
+        StageDefinition("Account Mapping: 2", 4, 10),
+        StageDefinition("Account Mapping: 3", 5, 10),
+        StageDefinition("Preview & Export",   6, 10),
+    ],
     "Items": [
         StageDefinition("Upload",         1, 20),
         StageDefinition("Source Profile", 2, 20),
@@ -37,6 +37,19 @@ STAGES_BY_WORKSTREAM: dict[str, list[StageDefinition]] = {
         StageDefinition("Test Import",    6, 10),
         StageDefinition("Import",         7, 10),
     ],
+    "Customers":    [],
+    "Vendors":      [],
+    "Locations":    [],
+    "Contacts":     [],
+    "Vehicles":     [],
+    "Equipment":    [],
+    "Fixed Assets": [],
+    # ── Opening Balances ───────────────────────────────────────────────────────
+    "Historical Balance Sheet Start": [],
+    "Trial Balance Movement":         [],
+    "Open Accounts Receivable":       [],
+    "Open Accounts Payable":          [],
+    "Stock on Hand":                  [],
 }
 
 
@@ -119,14 +132,14 @@ class WorkstreamRepository(BaseRepository[Workstream]):
         display_code: str,
         created_by: UUID,
     ) -> Workstream:
-        stages = STAGES_BY_WORKSTREAM.get(name, DEFAULT_STAGES)
+        stages = STAGES_BY_WORKSTREAM.get(name, [])
         workstream = Workstream(
             project_id=project_id,
             category_id=category_id,
             name=name,
             display_code=display_code,
             status="not_started",
-            current_stage=stages[0].name,
+            current_stage=stages[0].name if stages else None,
             created_by=created_by,
         )
         self.session.add(workstream)
