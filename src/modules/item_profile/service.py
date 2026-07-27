@@ -112,6 +112,9 @@ class FieldStats:
     semantic_role: str = "ambiguous"
     confidence_score: float = 0.0
     evidence: str = ""
+    # Per-field duplicate metrics
+    duplicate_row_count: int = 0
+    duplicate_group_count: int = 0
 
 
 def _classify_cardinality(distinct_count: int) -> str:
@@ -387,6 +390,14 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
     anomaly_count = 0
     anomaly_examples: list[str] = []
 
+    duplicate_row_count = 0
+    duplicate_group_count = 0
+    if non_null_count > 0:
+        str_non_null = non_null.astype(str)
+        vc = str_non_null.value_counts()
+        duplicate_row_count = int(str_non_null.duplicated(keep=False).sum())
+        duplicate_group_count = int((vc > 1).sum())
+
     if detected_type == "string" and non_null_count > 0:
         lengths = non_null.astype(str).str.len()
         text_len_min = int(lengths.min())
@@ -426,11 +437,117 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
         pattern_summary=pattern_summary,
         anomaly_count=anomaly_count,
         anomaly_examples=anomaly_examples,
+        duplicate_row_count=duplicate_row_count,
+        duplicate_group_count=duplicate_group_count,
     )
 
 
 def compute_all_stats(df: pd.DataFrame) -> list[FieldStats]:
     return [compute_field_stats(col, df[col]) for col in df.columns]
+
+
+# ---------------------------------------------------------------------------
+# Per-field findings and migration impact (source profile page)
+# ---------------------------------------------------------------------------
+
+def compute_field_findings(stats: "FieldStats") -> list[dict]:
+    """Return an ordered list of finding badge dicts for one field."""
+    findings: list[dict] = []
+
+    # Completely empty column
+    if stats.total_count > 0 and stats.null_count == stats.total_count:
+        findings.append({"type": "all_null", "label": f"{stats.null_count} missing (100%)", "severity": "error"})
+        return findings
+
+    # Partial nulls
+    if stats.null_count > 0:
+        sev = "error" if stats.null_pct > 50 else "warning"
+        findings.append({"type": "missing_values", "label": f"{stats.null_count} missing", "severity": sev})
+
+    # Duplicate rows on identifier fields
+    if (
+        stats.duplicate_row_count > 0
+        and stats.semantic_role in ("identifier_candidate", "cross_subsidiary_identifier")
+    ):
+        findings.append({"type": "duplicate_rows", "label": f"{stats.duplicate_row_count} duplicate rows", "severity": "error"})
+        if stats.duplicate_group_count > 0:
+            findings.append({"type": "duplicate_groups", "label": f"{stats.duplicate_group_count} groups", "severity": "warning"})
+
+    # Pattern anomalies
+    if stats.anomaly_count > 0:
+        findings.append({"type": "pattern_anomaly", "label": f"{stats.anomaly_count} pattern anomalies", "severity": "warning"})
+
+    # Value list / enumeration
+    if stats.semantic_role == "value_list":
+        findings.append({"type": "enumeration", "label": "Enumeration candidate", "severity": "info"})
+
+    # Cross-subsidiary composite key
+    if stats.semantic_role == "cross_subsidiary_identifier":
+        findings.append({"type": "composite_key", "label": "Composite-key candidate", "severity": "info"})
+
+    if not findings:
+        findings.append({"type": "clean", "label": "No issues", "severity": "success"})
+
+    return findings
+
+
+def compute_migration_impact(stats: "FieldStats", findings: list[dict]) -> str:
+    """Derive migration impact label from severity + findings."""
+    finding_types = {f["type"] for f in findings}
+    if "all_null" in finding_types or "duplicate_rows" in finding_types or stats.severity == "blocker":
+        return "Blocker"
+    if stats.severity == "warning" or "pattern_anomaly" in finding_types:
+        return "Warning"
+    if "missing_values" in finding_types:
+        return "Review"
+    return "Clean"
+
+
+# ---------------------------------------------------------------------------
+# Run-level domain stats (invalid UOM count, missing product type count)
+# ---------------------------------------------------------------------------
+
+_KNOWN_UOM_VALUES: frozenset[str] = frozenset({
+    "nos", "no", "pcs", "pc", "each", "ea", "kg", "g", "mg",
+    "l", "ml", "litre", "liter", "m", "cm", "mm", "mtrs", "mtr", "meter", "meters",
+    "ft", "in", "inch", "unit", "units", "box", "set", "pair", "roll",
+    "sheet", "pack", "lot", "bag", "bottle", "can", "drum", "tonne", "ton",
+    "sqm", "sqft", "sqin", "lm", "rm",
+})
+
+_UOM_FIELD_KEYWORDS: tuple[str, ...] = ("unit", "uom", "measure", "uom_id")
+_PRODUCT_TYPE_KEYWORDS: tuple[str, ...] = ("product type", "item type", "product_type", "item_type")
+
+
+def detect_uom_issues(df: "pd.DataFrame", all_stats: "list[FieldStats]") -> int:
+    """Count rows across UOM columns whose values are not in the known UOM vocabulary."""
+    uom_fields = [
+        s for s in all_stats
+        if s.semantic_role == "value_list"
+        and any(kw in s.field_name.lower() for kw in _UOM_FIELD_KEYWORDS)
+    ]
+    if not uom_fields:
+        return 0
+    total_invalid = 0
+    for fs in uom_fields:
+        if fs.field_name not in df.columns:
+            continue
+        col = df[fs.field_name].dropna().astype(str).str.strip().str.lower()
+        total_invalid += int((~col.isin(_KNOWN_UOM_VALUES)).sum())
+    return total_invalid
+
+
+def detect_missing_product_type(df: "pd.DataFrame", all_stats: "list[FieldStats]") -> int:
+    """Count null rows in the best candidate product-type column."""
+    type_fields = [
+        s for s in all_stats
+        if any(kw in s.field_name.lower() for kw in _PRODUCT_TYPE_KEYWORDS)
+    ]
+    if not type_fields:
+        return 0
+    # Prefer the field with the fewest nulls (most informative)
+    best = min(type_fields, key=lambda s: s.null_count)
+    return best.null_count
 
 
 def load_full_csv(raw: bytes) -> pd.DataFrame:

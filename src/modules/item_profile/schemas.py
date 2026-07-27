@@ -46,11 +46,25 @@ class RunDetailResponse(BaseModel):
     migration_key_field: str | None = None
     fields_processed: int | None = None
     coverage: CoverageMetrics
+    # Top stats bar
+    duplicate_identifier_count: int | None = None
+    invalid_uom_count: int | None = None
+    missing_product_type_count: int | None = None
+    fields_to_review_count: int | None = None
+    # AI interpretation panel (populated by DAB-44)
+    interpretation_text: str | None = None
+    recommended_actions: list[dict] | None = None
     created_at: datetime
     completed_at: datetime | None
     estimated_completion: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class FindingBadge(BaseModel):
+    type: str
+    label: str
+    severity: str
 
 
 class FieldListItem(BaseModel):
@@ -61,8 +75,15 @@ class FieldListItem(BaseModel):
     semantic_role: str | None
     confidence_score: float | None
     null_pct: float | None
+    null_count: int | None
+    total_count: int | None
+    non_null_count: int | None
+    distinct_count: int | None
     uniqueness_pct: float | None
     anomaly_count: int | None
+    sample_values: list[str] | None
+    findings: list[FindingBadge]
+    migration_impact: str
 
     model_config = {"from_attributes": True}
 
@@ -72,6 +93,20 @@ class PagedFieldsResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class FieldFindingSummary(BaseModel):
+    all_fields: int
+    blockers: int
+    identifier_candidates: int
+    duplicates: int
+    missing_values: int
+    invalid_values: int
+    near_empty: int
+    outliers: int
+    value_list_detected: int
+    reference_failures: int
+    pattern_anomalies: int
 
 
 class FieldDetailResponse(BaseModel):

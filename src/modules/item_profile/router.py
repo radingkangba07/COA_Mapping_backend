@@ -25,7 +25,9 @@ from src.modules.item_profile.schemas import (
     DecisionResponse,
     ExecuteResponse,
     FieldDetailResponse,
+    FieldFindingSummary,
     FieldListItem,
+    FindingBadge,
     PagedFieldsResponse,
     ProjectDecisionsResponse,
     RunCreateRequest,
@@ -33,7 +35,9 @@ from src.modules.item_profile.schemas import (
     RunDetailResponse,
     RunListItem,
 )
-from src.modules.item_profile.service import ItemProfileService
+from types import SimpleNamespace
+
+from src.modules.item_profile.service import ItemProfileService, compute_field_findings, compute_migration_impact as _compute_impact
 from src.modules.projects.dependencies import require_project_access
 
 logger = logging.getLogger(__name__)
@@ -122,6 +126,15 @@ async def get_item_profile_run(
         remaining = (run.field_count - run.fields_processed) * rate
         estimated_completion = datetime.now(UTC) + timedelta(seconds=max(remaining, 0))
 
+    dup_summary = run.duplicate_summary or {}
+    fields_to_review = None
+    if run.status == "complete" and run.field_count:
+        counts = await field_repo.get_finding_type_counts(run_id)
+        fields_to_review = (
+            counts["blockers"] + counts["missing_values"] + counts["pattern_anomalies"]
+            + counts["duplicates"] + counts["reference_failures"]
+        )
+
     return RunDetailResponse(
         run_id=run.id,
         status=run.status,
@@ -130,6 +143,12 @@ async def get_item_profile_run(
         migration_key_field=run.migration_key_field,
         fields_processed=run.fields_processed,
         coverage=CoverageMetrics(**coverage_data),
+        duplicate_identifier_count=dup_summary.get("total_duplicate_rows"),
+        invalid_uom_count=run.invalid_uom_count,
+        missing_product_type_count=run.missing_product_type_count,
+        fields_to_review_count=fields_to_review,
+        interpretation_text=run.interpretation_text,
+        recommended_actions=run.recommended_actions,
         created_at=run.created_at,
         completed_at=run.completed_at,
         estimated_completion=estimated_completion,
@@ -145,6 +164,7 @@ async def list_item_profile_fields(
     run_id: UUID,
     role: str | None = Query(default=None),
     severity: str | None = Query(default=None),
+    finding_type: str | None = Query(default=None),
     search: str | None = Query(default=None),
     sort: Literal["field_name", "null_pct", "uniqueness_pct"] = Query(default="field_name"),
     order: Literal["asc", "desc"] = Query(default="asc"),
@@ -163,27 +183,80 @@ async def list_item_profile_fields(
         run_id,
         role=role,
         severity=severity,
+        finding_type=finding_type,
         search=search,
         sort=sort,
         order=order,
         page=page,
         page_size=page_size,
     )
-    items = [
-        FieldListItem(
+
+    def _to_list_item(f) -> FieldListItem:
+        stats = f.stats or {}
+        null_pct = stats.get("null_pct", 0.0)
+        dup_rows = stats.get("duplicate_row_count", 0) or 0
+        dup_groups = stats.get("duplicate_group_count", 0) or 0
+        non_null = (f.total_count or 0) - (f.null_count or 0)
+
+        proxy = SimpleNamespace(
+            field_name=f.field_name,
+            detected_type=f.detected_type,
+            severity=f.severity,
+            semantic_role=f.semantic_role,
+            total_count=f.total_count or 0,
+            null_count=f.null_count or 0,
+            null_pct=null_pct,
+            anomaly_count=f.anomaly_count or 0,
+            duplicate_row_count=dup_rows,
+            duplicate_group_count=dup_groups,
+        )
+        raw_findings = compute_field_findings(proxy)  # type: ignore[arg-type]
+        migration_impact = _compute_impact(proxy, raw_findings)  # type: ignore[arg-type]
+
+        return FieldListItem(
             field_name=f.field_name,
             detected_type=f.detected_type,
             severity=f.severity,
             cardinality=f.cardinality,
             semantic_role=f.semantic_role,
             confidence_score=f.confidence_score,
-            null_pct=f.stats.get("null_pct") if f.stats else None,
-            uniqueness_pct=f.stats.get("uniqueness_pct") if f.stats else None,
+            null_pct=null_pct,
+            null_count=f.null_count,
+            total_count=f.total_count,
+            non_null_count=non_null,
+            distinct_count=f.distinct_count,
+            uniqueness_pct=stats.get("uniqueness_pct"),
             anomaly_count=f.anomaly_count,
+            sample_values=f.sample_values if isinstance(f.sample_values, list) else None,
+            findings=[FindingBadge(**b) for b in raw_findings],
+            migration_impact=migration_impact,
         )
-        for f in fields
-    ]
-    return PagedFieldsResponse(items=items, total=total, page=page, page_size=page_size)
+
+    return PagedFieldsResponse(
+        items=[_to_list_item(f) for f in fields],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get(
+    "/projects/{project_id}/item-profile/runs/{run_id}/fields/finding-summary",
+    response_model=FieldFindingSummary,
+)
+async def get_field_finding_summary(
+    project_id: UUID,
+    run_id: UUID,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("viewer")),
+    run_repo: ItemProfileRunRepository = Depends(get_run_repo),
+    field_repo: ItemFieldProfileRepository = Depends(get_field_repo),
+):
+    run = await run_repo.get_run_or_404(run_id)
+    if run.status != "complete":
+        raise ConflictError(f"Run {run_id} is not complete (status: {run.status})")
+    counts = await field_repo.get_finding_type_counts(run_id)
+    return FieldFindingSummary(**counts)
 
 
 @router.get(

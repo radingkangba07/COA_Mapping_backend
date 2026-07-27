@@ -7,7 +7,7 @@ from coa_db_models.profiling.models import (
     ItemProfileDecision,
     ItemProfileRun,
 )
-from sqlalchemy import Float, case, delete, func, insert, or_, select
+from sqlalchemy import Float, Integer, and_, case, delete, func, insert, or_, select
 from sqlalchemy import cast as sa_cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,10 @@ class ItemProfileRunRepository:
         completed_at: datetime | None = None,
         duplicate_summary: dict | None = None,
         cross_subsidiary_summary: dict | None = None,
+        invalid_uom_count: int | None = None,
+        missing_product_type_count: int | None = None,
+        interpretation_text: str | None = None,
+        recommended_actions: dict | None = None,
     ) -> None:
         run = await self.session.get(ItemProfileRun, run_id)
         if not run:
@@ -61,6 +65,14 @@ class ItemProfileRunRepository:
             run.duplicate_summary = duplicate_summary
         if cross_subsidiary_summary is not None:
             run.cross_subsidiary_summary = cross_subsidiary_summary
+        if invalid_uom_count is not None:
+            run.invalid_uom_count = invalid_uom_count
+        if missing_product_type_count is not None:
+            run.missing_product_type_count = missing_product_type_count
+        if interpretation_text is not None:
+            run.interpretation_text = interpretation_text
+        if recommended_actions is not None:
+            run.recommended_actions = recommended_actions
         await self.session.flush()
 
     async def list_runs(self, project_id: UUID) -> list[ItemProfileRun]:
@@ -97,12 +109,78 @@ class ItemFieldProfileRepository:
         await self.session.execute(insert(ItemFieldProfile), profiles)
         await self.session.flush()
 
+    _FINDING_TYPE_CONDITIONS = {
+        "blocker": lambda: ItemFieldProfile.severity == "blocker",
+        "identifier_candidate": lambda: ItemFieldProfile.semantic_role.in_(
+            ["identifier_candidate", "cross_subsidiary_identifier"]
+        ),
+        "value_list": lambda: ItemFieldProfile.semantic_role == "value_list",
+        "pattern_anomaly": lambda: and_(
+            ItemFieldProfile.anomaly_count.isnot(None), ItemFieldProfile.anomaly_count > 0
+        ),
+        "missing_values": lambda: and_(
+            ItemFieldProfile.null_count > 0, ItemFieldProfile.null_count < ItemFieldProfile.total_count
+        ),
+        "near_empty": lambda: sa_cast(ItemFieldProfile.stats["null_pct"].astext, Float) > 80,
+        "duplicate": lambda: sa_cast(
+            ItemFieldProfile.stats["duplicate_row_count"].astext, Integer
+        ) > 0,
+        "reference_failure": lambda: and_(
+            ItemFieldProfile.semantic_role.in_(["identifier_candidate", "cross_subsidiary_identifier"]),
+            ItemFieldProfile.null_count > 0,
+        ),
+    }
+
+    async def get_finding_type_counts(self, run_id: UUID) -> dict:
+        dup_col = sa_cast(ItemFieldProfile.stats["duplicate_row_count"].astext, Integer)
+        result = await self.session.execute(
+            select(
+                func.count().label("all_fields"),
+                func.sum(case((ItemFieldProfile.severity == "blocker", 1), else_=0)).label("blockers"),
+                func.sum(case((
+                    ItemFieldProfile.semantic_role.in_(["identifier_candidate", "cross_subsidiary_identifier"]),
+                    1), else_=0)).label("identifier_candidates"),
+                func.sum(case((ItemFieldProfile.semantic_role == "value_list", 1), else_=0)).label("value_list_detected"),
+                func.sum(case((
+                    and_(ItemFieldProfile.anomaly_count.isnot(None), ItemFieldProfile.anomaly_count > 0),
+                    1), else_=0)).label("pattern_anomalies"),
+                func.sum(case((
+                    and_(ItemFieldProfile.null_count > 0, ItemFieldProfile.null_count < ItemFieldProfile.total_count),
+                    1), else_=0)).label("missing_values"),
+                func.sum(case((
+                    sa_cast(ItemFieldProfile.stats["null_pct"].astext, Float) > 80,
+                    1), else_=0)).label("near_empty"),
+                func.sum(case((dup_col > 0, 1), else_=0)).label("duplicates"),
+                func.sum(case((
+                    and_(
+                        ItemFieldProfile.semantic_role.in_(["identifier_candidate", "cross_subsidiary_identifier"]),
+                        ItemFieldProfile.null_count > 0,
+                    ),
+                    1), else_=0)).label("reference_failures"),
+            ).where(ItemFieldProfile.run_id == run_id)
+        )
+        row = result.one()
+        return {
+            "all_fields": row.all_fields or 0,
+            "blockers": row.blockers or 0,
+            "identifier_candidates": row.identifier_candidates or 0,
+            "duplicates": row.duplicates or 0,
+            "missing_values": row.missing_values or 0,
+            "invalid_values": 0,
+            "near_empty": row.near_empty or 0,
+            "outliers": 0,
+            "value_list_detected": row.value_list_detected or 0,
+            "reference_failures": row.reference_failures or 0,
+            "pattern_anomalies": row.pattern_anomalies or 0,
+        }
+
     async def list_fields(
         self,
         run_id: UUID,
         *,
         role: str | None = None,
         severity: str | None = None,
+        finding_type: str | None = None,
         search: str | None = None,
         sort: str = "field_name",
         order: str = "asc",
@@ -114,6 +192,8 @@ class ItemFieldProfileRepository:
             query = query.where(ItemFieldProfile.semantic_role == role)
         if severity:
             query = query.where(ItemFieldProfile.severity == severity)
+        if finding_type and finding_type in self._FINDING_TYPE_CONDITIONS:
+            query = query.where(self._FINDING_TYPE_CONDITIONS[finding_type]())
         if search:
             query = query.where(ItemFieldProfile.field_name.ilike(f"%{search}%"))
 

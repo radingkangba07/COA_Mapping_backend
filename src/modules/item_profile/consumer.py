@@ -13,8 +13,12 @@ from src.core.config import get_settings
 from src.modules.item_profile.service import (
     apply_semantic_roles,
     compute_all_stats,
+    compute_field_findings,
+    compute_migration_impact,
     detect_cross_subsidiary_splits,
     detect_duplicates,
+    detect_uom_issues,
+    detect_missing_product_type,
     load_full_csv,
     _count_rows,
 )
@@ -174,6 +178,9 @@ class ItemProfileConsumer:
             # ----------------------------------------------------------------
             # Persist field profiles and mark complete
             # ----------------------------------------------------------------
+            invalid_uom_count = detect_uom_issues(df, all_stats)
+            missing_product_type_count = detect_missing_product_type(df, all_stats)
+
             await self.field_repo.delete_by_run(run_id)
             await self.field_repo.bulk_create([
                 {
@@ -191,6 +198,7 @@ class ItemProfileConsumer:
                     "semantic_role": s.semantic_role,
                     "confidence_score": s.confidence_score,
                     "evidence": s.evidence or None,
+                    "sample_values": [v["value"] for v in s.top_values[:3]] if s.top_values else None,
                     "odoo_target": classify_odoo_target(
                         s.semantic_role,
                         s.detected_type,
@@ -207,6 +215,8 @@ class ItemProfileConsumer:
                         "numeric_max": s.numeric_max,
                         "numeric_mean": s.numeric_mean,
                         "numeric_std": s.numeric_std,
+                        "duplicate_row_count": s.duplicate_row_count,
+                        "duplicate_group_count": s.duplicate_group_count,
                     },
                 }
                 for s in all_stats
@@ -219,6 +229,8 @@ class ItemProfileConsumer:
                 fields_processed=len(all_stats),
                 duplicate_summary=dup_summary,
                 cross_subsidiary_summary=cross_sub_summary,
+                invalid_uom_count=invalid_uom_count,
+                missing_product_type_count=missing_product_type_count,
             )
             await self.session.commit()
             logger.info(
