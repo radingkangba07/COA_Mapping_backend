@@ -118,10 +118,18 @@ class ItemFieldProfileRepository:
         "pattern_anomaly": lambda: and_(
             ItemFieldProfile.anomaly_count.isnot(None), ItemFieldProfile.anomaly_count > 0
         ),
+        "invalid_values": lambda: and_(
+            ItemFieldProfile.semantic_role == "value_list",
+            ItemFieldProfile.anomaly_count.isnot(None),
+            ItemFieldProfile.anomaly_count > 0,
+        ),
         "missing_values": lambda: and_(
             ItemFieldProfile.null_count > 0, ItemFieldProfile.null_count < ItemFieldProfile.total_count
         ),
         "near_empty": lambda: sa_cast(ItemFieldProfile.stats["null_pct"].astext, Float) > 80,
+        "outliers": lambda: sa_cast(
+            ItemFieldProfile.stats["outlier_count"].astext, Integer
+        ) > 0,
         "duplicate": lambda: sa_cast(
             ItemFieldProfile.stats["duplicate_row_count"].astext, Integer
         ) > 0,
@@ -133,6 +141,7 @@ class ItemFieldProfileRepository:
 
     async def get_finding_type_counts(self, run_id: UUID) -> dict:
         dup_col = sa_cast(ItemFieldProfile.stats["duplicate_row_count"].astext, Integer)
+        outlier_col = sa_cast(ItemFieldProfile.stats["outlier_count"].astext, Integer)
         result = await self.session.execute(
             select(
                 func.count().label("all_fields"),
@@ -145,12 +154,20 @@ class ItemFieldProfileRepository:
                     and_(ItemFieldProfile.anomaly_count.isnot(None), ItemFieldProfile.anomaly_count > 0),
                     1), else_=0)).label("pattern_anomalies"),
                 func.sum(case((
+                    and_(
+                        ItemFieldProfile.semantic_role == "value_list",
+                        ItemFieldProfile.anomaly_count.isnot(None),
+                        ItemFieldProfile.anomaly_count > 0,
+                    ),
+                    1), else_=0)).label("invalid_values"),
+                func.sum(case((
                     and_(ItemFieldProfile.null_count > 0, ItemFieldProfile.null_count < ItemFieldProfile.total_count),
                     1), else_=0)).label("missing_values"),
                 func.sum(case((
                     sa_cast(ItemFieldProfile.stats["null_pct"].astext, Float) > 80,
                     1), else_=0)).label("near_empty"),
                 func.sum(case((dup_col > 0, 1), else_=0)).label("duplicates"),
+                func.sum(case((outlier_col > 0, 1), else_=0)).label("outliers"),
                 func.sum(case((
                     and_(
                         ItemFieldProfile.semantic_role.in_(["identifier_candidate", "cross_subsidiary_identifier"]),
@@ -166,9 +183,9 @@ class ItemFieldProfileRepository:
             "identifier_candidates": row.identifier_candidates or 0,
             "duplicates": row.duplicates or 0,
             "missing_values": row.missing_values or 0,
-            "invalid_values": 0,
+            "invalid_values": row.invalid_values or 0,
             "near_empty": row.near_empty or 0,
-            "outliers": 0,
+            "outliers": row.outliers or 0,
             "value_list_detected": row.value_list_detected or 0,
             "reference_failures": row.reference_failures or 0,
             "pattern_anomalies": row.pattern_anomalies or 0,
