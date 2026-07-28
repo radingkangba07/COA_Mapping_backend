@@ -22,7 +22,8 @@ from src.modules.item_profile.service import (
     load_full_csv,
     _count_rows,
 )
-from src.modules.item_profile.odoo_mapper import classify_odoo_target
+from src.modules.item_profile.erp_mapper import classify_erp_target
+from src.modules.projects.repository import ProjectRepository
 from src.modules.storage.s3_provider import S3Provider
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,10 @@ class ItemProfileConsumer:
             logger.warning("Run %s has no source_file_ref, skipping", run_id)
             return
 
+        # Resolve the project's target ERP for field mapping
+        project = await ProjectRepository(self.session).get_by_id(run.project_id)
+        target_system: str | None = project.target_system if project else None
+
         try:
             if not self.store:
                 raise RuntimeError("Storage not configured")
@@ -199,7 +204,8 @@ class ItemProfileConsumer:
                     "confidence_score": s.confidence_score,
                     "evidence": s.evidence or None,
                     "sample_values": [v["value"] for v in s.top_values[:3]] if s.top_values else None,
-                    "odoo_target": classify_odoo_target(
+                    "erp_target": classify_erp_target(
+                        target_system,
                         s.semantic_role,
                         s.detected_type,
                         s.pattern_summary,

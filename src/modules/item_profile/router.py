@@ -332,7 +332,7 @@ async def get_item_profile_field(
         stats=fp.stats,
         sample_values=fp.sample_values,
         findings=[FindingBadge(**b) for b in detail_findings],
-        odoo_target=fp.odoo_target,
+        erp_target=fp.erp_target,
         current_decision=current_decision,
     )
 
@@ -373,7 +373,7 @@ async def override_field_metadata(
         field_name=fp.field_name,
         detected_type=fp.detected_type,
         semantic_role=fp.semantic_role,
-        odoo_target=fp.odoo_target,
+        erp_target=fp.erp_target,
     )
 
 
@@ -515,7 +515,7 @@ async def execute_decision(
 )
 async def reload_odoo_map(user: User = Depends(get_current_user)):
     """Clear the cached Odoo field map so it is reloaded from disk on the next request."""
-    from src.modules.item_profile.odoo_mapper import reload_odoo_map as _reload
+    from src.modules.item_profile.erp_mapper import reload_erp_maps as _reload
     _reload()
 
 

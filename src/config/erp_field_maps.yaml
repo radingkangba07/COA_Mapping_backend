@@ -1,0 +1,73 @@
+# ERP target field maps — keyed by ERP product ID (matches target_system on projects).
+# Add a new top-level key for each ERP you want to support.
+# The mapper loads the matching block at runtime; no code change required.
+
+odoo:
+  fields:
+    - name: default_code
+      label: Internal Reference
+      expected_role: identifier_candidate
+      expected_type: string
+      notes: "Unique string, max 64 chars — strong Identifier Candidate match"
+
+    - name: name
+      label: Product Name
+      expected_role: free_text
+      expected_type: string
+      notes: "Non-null required; primary display label for the item"
+
+    - name: type
+      label: Product Type
+      expected_role: value_list
+      expected_type: string
+      notes: "Allowed values: consu, service, product"
+
+    - name: uom_id
+      label: Unit of Measure
+      expected_role: value_list
+      expected_type: string
+      notes: "Must match an Odoo UoM entry; controlled vocabulary"
+
+    - name: categ_id
+      label: Category
+      expected_role: value_list
+      expected_type: string
+      notes: "Hierarchical category; must resolve to an Odoo product category"
+
+    - name: list_price
+      label: Sales Price
+      expected_role: numeric_measure
+      expected_type: decimal
+      notes: "Non-negative decimal; maps to Odoo sales price"
+
+    - name: standard_price
+      label: Cost
+      expected_role: numeric_measure
+      expected_type: decimal
+      notes: "Non-negative decimal; maps to Odoo standard (cost) price"
+
+    - name: barcode
+      label: Barcode
+      expected_role: identifier_candidate
+      expected_type: string
+      barcode_validation: true
+      notes: "EAN-13 or UPC-A pattern preferred (12–13 digit strings)"
+
+odoo_enterprise:
+  extends: odoo
+
+# oracle_netsuite:
+#   fields:
+#     - name: itemid
+#       label: Item ID
+#       expected_role: identifier_candidate
+#       expected_type: string
+#       notes: "NetSuite internal item identifier"
+
+# microsoft_business_central:
+#   fields:
+#     - name: No_
+#       label: Item No.
+#       expected_role: identifier_candidate
+#       expected_type: string
+#       notes: "Business Central item number"

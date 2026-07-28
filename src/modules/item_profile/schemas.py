@@ -126,7 +126,7 @@ class FieldDetailResponse(BaseModel):
     stats: dict[str, Any] | None
     sample_values: list[str] | None
     findings: list[FindingBadge] = []
-    odoo_target: dict[str, Any] | None = None
+    erp_target: dict[str, Any] | None = None
     current_decision: "DecisionResponse | None" = None
 
     model_config = {"from_attributes": True}
@@ -201,4 +201,4 @@ class FieldOverrideResponse(BaseModel):
     field_name: str
     detected_type: str
     semantic_role: str | None
-    odoo_target: dict | None
+    erp_target: dict | None

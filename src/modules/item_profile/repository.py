@@ -479,19 +479,27 @@ class ItemProfileDecisionRepository:
     ) -> ItemProfileDecision:
         """Override detected_type and/or semantic_role on a field profile. Creates a decision
         record of type override_field_metadata, applies it immediately, and writes an audit row."""
-        from src.modules.item_profile.odoo_mapper import classify_odoo_target
+        from coa_db_models.profiling.models import ItemProfileRun
+        from src.modules.item_profile.erp_mapper import classify_erp_target
+        from src.modules.projects.repository import ProjectRepository
 
         fp = await field_repo.get_field_or_404(run_id, field_name)
+
+        # Resolve the project's target ERP for re-mapping after override
+        run = await self.session.get(ItemProfileRun, run_id)
+        project = await ProjectRepository(self.session).get_by_id(run.project_id) if run else None
+        target_system: str | None = project.target_system if project else None
 
         previous_state = {
             "detected_type": fp.detected_type,
             "semantic_role": fp.semantic_role,
-            "odoo_target": fp.odoo_target,
+            "erp_target": fp.erp_target,
         }
 
         new_detected_type = detected_type if detected_type is not None else fp.detected_type
         new_semantic_role = semantic_role if semantic_role is not None else fp.semantic_role
-        new_odoo_target = classify_odoo_target(
+        new_erp_target = classify_erp_target(
+            target_system,
             new_semantic_role,
             new_detected_type,
             fp.pattern_summary,
@@ -499,7 +507,7 @@ class ItemProfileDecisionRepository:
 
         fp.detected_type = new_detected_type
         fp.semantic_role = new_semantic_role
-        fp.odoo_target = new_odoo_target
+        fp.erp_target = new_erp_target
         await self.session.flush()
 
         decision = ItemProfileDecision(
@@ -524,7 +532,7 @@ class ItemProfileDecisionRepository:
                 "field_name": field_name,
                 "detected_type": new_detected_type,
                 "semantic_role": new_semantic_role,
-                "odoo_target": new_odoo_target,
+                "erp_target": new_erp_target,
             },
         )
         self.session.add(audit)
