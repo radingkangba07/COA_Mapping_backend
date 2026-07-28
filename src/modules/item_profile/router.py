@@ -27,6 +27,8 @@ from src.modules.item_profile.schemas import (
     FieldDetailResponse,
     FieldFindingSummary,
     FieldListItem,
+    FieldOverrideRequest,
+    FieldOverrideResponse,
     FindingBadge,
     PagedFieldsResponse,
     ProjectDecisionsResponse,
@@ -310,6 +312,46 @@ async def get_item_profile_field(
         sample_values=fp.sample_values,
         odoo_target=fp.odoo_target,
         current_decision=current_decision,
+    )
+
+
+@router.patch(
+    "/projects/{project_id}/item-profile/runs/{run_id}/fields/{field_name}",
+    response_model=FieldOverrideResponse,
+)
+async def override_field_metadata(
+    project_id: UUID,
+    run_id: UUID,
+    field_name: str,
+    data: FieldOverrideRequest,
+    user: User = Depends(get_current_user),
+    _access=Depends(require_project_access("editor")),
+    run_repo: ItemProfileRunRepository = Depends(get_run_repo),
+    field_repo: ItemFieldProfileRepository = Depends(get_field_repo),
+    decision_repo: ItemProfileDecisionRepository = Depends(get_decision_repo),
+):
+    run = await run_repo.get_run_or_404(run_id)
+    if run.status != "complete":
+        raise ConflictError(f"Run {run_id} is not complete (status: {run.status})")
+    if data.detected_type is None and data.semantic_role is None:
+        raise ConflictError("At least one of detected_type or semantic_role must be provided")
+
+    await decision_repo.override_field_metadata(
+        run_id=run_id,
+        field_name=field_name,
+        detected_type=data.detected_type,
+        semantic_role=data.semantic_role,
+        user_id=user.id,
+        field_repo=field_repo,
+    )
+    await decision_repo.session.commit()
+
+    fp = await field_repo.get_field_or_404(run_id, field_name)
+    return FieldOverrideResponse(
+        field_name=fp.field_name,
+        detected_type=fp.detected_type,
+        semantic_role=fp.semantic_role,
+        odoo_target=fp.odoo_target,
     )
 
 

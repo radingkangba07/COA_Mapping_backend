@@ -468,6 +468,69 @@ class ItemProfileDecisionRepository:
         await self.session.flush()
         return decision, rows_affected
 
+    async def override_field_metadata(
+        self,
+        run_id: UUID,
+        field_name: str,
+        detected_type: str | None,
+        semantic_role: str | None,
+        user_id: UUID,
+        field_repo: "ItemFieldProfileRepository",
+    ) -> ItemProfileDecision:
+        """Override detected_type and/or semantic_role on a field profile. Creates a decision
+        record of type override_field_metadata, applies it immediately, and writes an audit row."""
+        from src.modules.item_profile.odoo_mapper import classify_odoo_target
+
+        fp = await field_repo.get_field_or_404(run_id, field_name)
+
+        previous_state = {
+            "detected_type": fp.detected_type,
+            "semantic_role": fp.semantic_role,
+            "odoo_target": fp.odoo_target,
+        }
+
+        new_detected_type = detected_type if detected_type is not None else fp.detected_type
+        new_semantic_role = semantic_role if semantic_role is not None else fp.semantic_role
+        new_odoo_target = classify_odoo_target(
+            new_semantic_role,
+            new_detected_type,
+            fp.pattern_summary,
+        )
+
+        fp.detected_type = new_detected_type
+        fp.semantic_role = new_semantic_role
+        fp.odoo_target = new_odoo_target
+        await self.session.flush()
+
+        decision = ItemProfileDecision(
+            run_id=run_id,
+            field_name=field_name,
+            action="override_field_metadata",
+            fix_type=None,
+            transformation_config={"detected_type": detected_type, "semantic_role": semantic_role},
+            status="applied",
+            decided_by=user_id,
+        )
+        self.session.add(decision)
+        await self.session.flush()
+        await self.session.refresh(decision)
+
+        audit = ItemProfileAudit(
+            decision_id=decision.id,
+            changed_by=user_id,
+            previous_state=previous_state,
+            new_state={
+                "action": "override_field_metadata",
+                "field_name": field_name,
+                "detected_type": new_detected_type,
+                "semantic_role": new_semantic_role,
+                "odoo_target": new_odoo_target,
+            },
+        )
+        self.session.add(audit)
+        await self.session.flush()
+        return decision
+
     async def list_project_decisions(self, project_id: UUID) -> list[ItemProfileDecision]:
         result = await self.session.execute(
             select(ItemProfileDecision)

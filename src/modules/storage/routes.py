@@ -5,15 +5,19 @@ from uuid import UUID
 
 import pandas as pd
 from coa_db_models.auth.models import User
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.core.exceptions import AppError
 from src.modules.auth.dependencies import get_current_user
+from src.modules.item_profile.dependencies import get_item_profile_service
+from src.modules.item_profile.service import ItemProfileService
 from src.modules.projects.dependencies import require_project_access
 from src.modules.storage.dependencies import get_storage_service
 from src.modules.storage.schemas import FileListResponse, FileResponse, FileUploadResponse, SignedUrlResponse
 from src.modules.storage.service import StorageService
+
+_ITEM_PROFILE_FILE_TYPES = frozenset(["item_source", "items", "source_erp"])
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +151,7 @@ async def delete_file(
 
 @files_router.post("/upload")
 async def files_upload(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     project_id: str = Query(...),
     file_type: str = Query(...),
@@ -155,6 +160,7 @@ async def files_upload(
     workstream_id: UUID | None = Query(default=None),
     user: User = Depends(get_current_user),
     service: StorageService = Depends(get_storage_service),
+    profile_service: ItemProfileService = Depends(get_item_profile_service),
 ):
     """Upload a file, persist to storage, parse contents — matches legacy response."""
     try:
@@ -174,16 +180,35 @@ async def files_upload(
         # Create session_id for legacy compatibility
         session_id = str(uuid_mod.uuid4())
 
+        pid = UUID(project_id)
+
         # Persist file via storage service
         result = await service.upload_file(
             file_data=contents,
             filename=filename,
-            project_id=UUID(project_id),
+            project_id=pid,
             file_type=file_type,
             user_id=user.id,
             uploaded_by=user.id,
             workstream_id=workstream_id,
         )
+
+        # Auto-kickoff item profile run for item source files
+        profile_run_id = None
+        if file_type in _ITEM_PROFILE_FILE_TYPES:
+            try:
+                s3_key = result.storage_path
+                run_result = await profile_service.initiate_run(pid, s3_key, user)
+                profile_run_id = str(run_result["run_id"])
+                background_tasks.add_task(
+                    profile_service.process_run,
+                    run_result["run_id"],
+                    pid,
+                    s3_key,
+                )
+                logger.info("Auto-kicked item profile run %s for project %s", profile_run_id, project_id)
+            except Exception:
+                logger.exception("Failed to auto-kick item profile run for project %s", project_id)
 
         all_data = df.fillna("").to_dict(orient="records") if df is not None else []
 
@@ -194,6 +219,7 @@ async def files_upload(
             "row_count": len(df) if df is not None else 0,
             "sample_data": all_data,
             "file": FileUploadResponse.model_validate(result),
+            "profile_run_id": profile_run_id,
         }
     except AppError:
         raise

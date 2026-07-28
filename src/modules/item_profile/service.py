@@ -34,9 +34,18 @@ def _infer_column_type(series: pd.Series) -> str:
 
     try:
         pd.to_numeric(non_null, errors="raise")
-        # Distinguish integer vs decimal by checking for fractional parts
         as_float = non_null.astype(float)
         if (as_float == as_float.astype("int64")).all():
+            int_vals = as_float.astype("int64")
+            # Detect YYYYMMDD dates stored as integers (e.g. 20231215)
+            if (
+                len(int_vals) > 0
+                and (int_vals >= 19000101).all()
+                and (int_vals <= 20991231).all()
+                and (int_vals % 10000 // 100).between(1, 12).all()
+                and (int_vals % 100).between(1, 31).all()
+            ):
+                return "date"
             return "integer"
         return "decimal"
     except (ValueError, TypeError):

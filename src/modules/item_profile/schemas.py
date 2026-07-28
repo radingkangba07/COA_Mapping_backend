@@ -135,8 +135,14 @@ class FieldDetailResponse(BaseModel):
 # DAB-38 — Decision schemas
 # ---------------------------------------------------------------------------
 
-_DECISION_TYPES = Literal["confirm_identifier", "apply_fix", "ignore_field"]
+_DECISION_TYPES = Literal["confirm_identifier", "apply_fix", "ignore_field", "override_field_metadata"]
 _FIX_TYPES = Literal["uom_alias_normalise", "trim_whitespace", "standardise_case", "custom"]
+
+_VALID_DETECTED_TYPES = frozenset(["string", "integer", "decimal", "date", "boolean"])
+_VALID_SEMANTIC_ROLES = frozenset([
+    "identifier_candidate", "cross_subsidiary_identifier", "value_list",
+    "free_text", "numeric_measure", "date_temporal", "ambiguous",
+])
 
 
 class DecisionCreateRequest(BaseModel):
@@ -169,3 +175,29 @@ class ExecuteResponse(BaseModel):
     fix_type: str | None
     status: str
     rows_affected: int
+
+
+class FieldOverrideRequest(BaseModel):
+    detected_type: str | None = None
+    semantic_role: str | None = None
+
+    @field_validator("detected_type")
+    @classmethod
+    def validate_detected_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_DETECTED_TYPES:
+            raise ValueError(f"detected_type must be one of {sorted(_VALID_DETECTED_TYPES)}")
+        return v
+
+    @field_validator("semantic_role")
+    @classmethod
+    def validate_semantic_role(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_SEMANTIC_ROLES:
+            raise ValueError(f"semantic_role must be one of {sorted(_VALID_SEMANTIC_ROLES)}")
+        return v
+
+
+class FieldOverrideResponse(BaseModel):
+    field_name: str
+    detected_type: str
+    semantic_role: str | None
+    odoo_target: dict | None
