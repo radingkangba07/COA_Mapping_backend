@@ -227,6 +227,10 @@ class ItemProfileConsumer:
                         "outlier_examples": s.outlier_examples or None,
                         "date_format": s.date_format,
                         "date_format_consistency_pct": s.date_format_consistency_pct,
+                        "date_earliest": s.date_earliest,
+                        "date_latest": s.date_latest,
+                        "invalid_date_count": s.invalid_date_count,
+                        "future_dated_count": s.future_dated_count,
                     },
                 }
                 for s in all_stats

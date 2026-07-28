@@ -130,6 +130,11 @@ class FieldStats:
     # Date format
     date_format: str | None = None  # 'yyyymmdd_int' | 'iso' | 'non_iso'
     date_format_consistency_pct: float | None = None
+    # Date range stats (populated for date fields)
+    date_earliest: str | None = None
+    date_latest: str | None = None
+    invalid_date_count: int = 0
+    future_dated_count: int = 0
 
 
 def _classify_cardinality(distinct_count: int) -> str:
@@ -444,16 +449,33 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
                     if outlier_count > 0:
                         outlier_examples = numeric[mask].astype(str).head(5).tolist()
 
+    date_earliest: str | None = None
+    date_latest: str | None = None
+    invalid_date_count = 0
+    future_dated_count = 0
+
     if detected_type == "date" and non_null_count > 0:
         try:
             pd.to_numeric(non_null, errors="raise")
             date_format = "yyyymmdd_int"
             date_format_consistency_pct = 100.0
+            # YYYYMMDD integers — cast via float to drop ".0" suffix before parsing
+            int_strs = non_null.astype(float).astype(int).astype(str)
+            parsed = pd.to_datetime(int_strs, format="%Y%m%d", errors="coerce")
         except (ValueError, TypeError):
             str_vals = non_null.astype(str)
             iso_count = int(str_vals.str.match(r"^\d{4}-\d{2}-\d{2}$", na=False).sum())
             date_format_consistency_pct = round(iso_count / non_null_count * 100, 2)
             date_format = "iso" if iso_count == non_null_count else "non_iso"
+            parsed = pd.to_datetime(non_null, errors="coerce", format="mixed")
+
+        invalid_date_count = int(parsed.isna().sum())
+        valid_dates = parsed.dropna()
+        if not valid_dates.empty:
+            date_earliest = valid_dates.min().strftime("%Y-%m-%d")
+            date_latest = valid_dates.max().strftime("%Y-%m-%d")
+            today = pd.Timestamp.today().normalize()
+            future_dated_count = int((valid_dates > today).sum())
 
     return FieldStats(
         field_name=col_name,
@@ -483,6 +505,10 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
         outlier_examples=outlier_examples,
         date_format=date_format,
         date_format_consistency_pct=date_format_consistency_pct,
+        date_earliest=date_earliest,
+        date_latest=date_latest,
+        invalid_date_count=invalid_date_count,
+        future_dated_count=future_dated_count,
     )
 
 
