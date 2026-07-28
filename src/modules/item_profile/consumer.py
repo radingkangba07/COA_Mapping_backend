@@ -217,6 +217,10 @@ class ItemProfileConsumer:
                         "numeric_std": s.numeric_std,
                         "duplicate_row_count": s.duplicate_row_count,
                         "duplicate_group_count": s.duplicate_group_count,
+                        "outlier_count": s.outlier_count,
+                        "outlier_examples": s.outlier_examples or None,
+                        "date_format": s.date_format,
+                        "date_format_consistency_pct": s.date_format_consistency_pct,
                     },
                 }
                 for s in all_stats

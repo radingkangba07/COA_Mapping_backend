@@ -211,6 +211,9 @@ async def list_item_profile_fields(
             anomaly_count=f.anomaly_count or 0,
             duplicate_row_count=dup_rows,
             duplicate_group_count=dup_groups,
+            outlier_count=stats.get("outlier_count", 0) or 0,
+            date_format=stats.get("date_format"),
+            date_format_consistency_pct=stats.get("date_format_consistency_pct"),
         )
         raw_findings = compute_field_findings(proxy)  # type: ignore[arg-type]
         migration_impact = _compute_impact(proxy, raw_findings)  # type: ignore[arg-type]
@@ -221,7 +224,7 @@ async def list_item_profile_fields(
             severity=f.severity,
             cardinality=f.cardinality,
             semantic_role=f.semantic_role,
-            confidence_score=f.confidence_score,
+            confidence_score=round(f.confidence_score * 100, 1) if f.confidence_score is not None else None,
             null_pct=null_pct,
             null_count=f.null_count,
             total_count=f.total_count,
@@ -294,6 +297,24 @@ async def get_item_profile_field(
         if pending
         else None
     )
+    detail_stats = fp.stats or {}
+    detail_proxy = SimpleNamespace(
+        field_name=fp.field_name,
+        detected_type=fp.detected_type,
+        severity=fp.severity,
+        semantic_role=fp.semantic_role,
+        total_count=fp.total_count or 0,
+        null_count=fp.null_count or 0,
+        null_pct=detail_stats.get("null_pct", 0.0),
+        anomaly_count=fp.anomaly_count or 0,
+        duplicate_row_count=detail_stats.get("duplicate_row_count", 0) or 0,
+        duplicate_group_count=detail_stats.get("duplicate_group_count", 0) or 0,
+        outlier_count=detail_stats.get("outlier_count", 0) or 0,
+        date_format=detail_stats.get("date_format"),
+        date_format_consistency_pct=detail_stats.get("date_format_consistency_pct"),
+    )
+    detail_findings = compute_field_findings(detail_proxy)  # type: ignore[arg-type]
+
     return FieldDetailResponse(
         field_name=fp.field_name,
         detected_type=fp.detected_type,
@@ -303,13 +324,14 @@ async def get_item_profile_field(
         severity=fp.severity,
         cardinality=fp.cardinality,
         semantic_role=fp.semantic_role,
-        confidence_score=fp.confidence_score,
+        confidence_score=round(fp.confidence_score * 100, 1) if fp.confidence_score is not None else None,
         evidence=fp.evidence,
         pattern_summary=fp.pattern_summary,
         anomaly_count=fp.anomaly_count,
         anomaly_examples=fp.anomaly_examples,
         stats=fp.stats,
         sample_values=fp.sample_values,
+        findings=[FindingBadge(**b) for b in detail_findings],
         odoo_target=fp.odoo_target,
         current_decision=current_decision,
     )

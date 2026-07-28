@@ -124,7 +124,8 @@ class FieldDetailResponse(BaseModel):
     anomaly_count: int | None
     anomaly_examples: list[str] | None
     stats: dict[str, Any] | None
-    sample_values: dict[str, Any] | None
+    sample_values: list[str] | None
+    findings: list[FindingBadge] = []
     odoo_target: dict[str, Any] | None = None
     current_decision: "DecisionResponse | None" = None
 

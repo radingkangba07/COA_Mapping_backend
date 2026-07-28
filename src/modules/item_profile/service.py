@@ -124,6 +124,12 @@ class FieldStats:
     # Per-field duplicate metrics
     duplicate_row_count: int = 0
     duplicate_group_count: int = 0
+    # Range anomaly (IQR outlier detection)
+    outlier_count: int = 0
+    outlier_examples: list[str] = field(default_factory=list)
+    # Date format
+    date_format: str | None = None  # 'yyyymmdd_int' | 'iso' | 'non_iso'
+    date_format_consistency_pct: float | None = None
 
 
 def _classify_cardinality(distinct_count: int) -> str:
@@ -416,6 +422,11 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
         if pattern_summary is not None:
             anomaly_count, anomaly_examples = _detect_anomalies(non_null, pattern_summary["dominant"])
 
+    outlier_count = 0
+    outlier_examples: list[str] = []
+    date_format: str | None = None
+    date_format_consistency_pct: float | None = None
+
     if detected_type in ("integer", "decimal") and non_null_count > 0:
         numeric = pd.to_numeric(non_null, errors="coerce").dropna()
         if not numeric.empty:
@@ -423,6 +434,26 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
             numeric_max = round(float(numeric.max()), 4)
             numeric_mean = round(float(numeric.mean()), 4)
             numeric_std = round(float(numeric.std()), 4) if len(numeric) > 1 else 0.0
+            if len(numeric) >= 4:
+                q1, q3 = float(numeric.quantile(0.25)), float(numeric.quantile(0.75))
+                iqr = q3 - q1
+                if iqr > 0:
+                    lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+                    mask = (numeric < lower) | (numeric > upper)
+                    outlier_count = int(mask.sum())
+                    if outlier_count > 0:
+                        outlier_examples = numeric[mask].astype(str).head(5).tolist()
+
+    if detected_type == "date" and non_null_count > 0:
+        try:
+            pd.to_numeric(non_null, errors="raise")
+            date_format = "yyyymmdd_int"
+            date_format_consistency_pct = 100.0
+        except (ValueError, TypeError):
+            str_vals = non_null.astype(str)
+            iso_count = int(str_vals.str.match(r"^\d{4}-\d{2}-\d{2}$", na=False).sum())
+            date_format_consistency_pct = round(iso_count / non_null_count * 100, 2)
+            date_format = "iso" if iso_count == non_null_count else "non_iso"
 
     return FieldStats(
         field_name=col_name,
@@ -448,6 +479,10 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
         anomaly_examples=anomaly_examples,
         duplicate_row_count=duplicate_row_count,
         duplicate_group_count=duplicate_group_count,
+        outlier_count=outlier_count,
+        outlier_examples=outlier_examples,
+        date_format=date_format,
+        date_format_consistency_pct=date_format_consistency_pct,
     )
 
 
@@ -482,9 +517,26 @@ def compute_field_findings(stats: "FieldStats") -> list[dict]:
         if stats.duplicate_group_count > 0:
             findings.append({"type": "duplicate_groups", "label": f"{stats.duplicate_group_count} groups", "severity": "warning"})
 
-    # Pattern anomalies
+    # Pattern anomalies / invalid values
     if stats.anomaly_count > 0:
-        findings.append({"type": "pattern_anomaly", "label": f"{stats.anomaly_count} pattern anomalies", "severity": "warning"})
+        if stats.semantic_role == "value_list":
+            findings.append({"type": "invalid_values", "label": f"{stats.anomaly_count} invalid values", "severity": "error"})
+        else:
+            findings.append({"type": "pattern_anomaly", "label": f"{stats.anomaly_count} pattern anomalies", "severity": "warning"})
+
+    # Range anomaly — IQR outliers on numeric fields
+    outlier_count = getattr(stats, "outlier_count", 0) or 0
+    if outlier_count > 0:
+        findings.append({"type": "outliers", "label": f"{outlier_count} outliers", "severity": "warning"})
+        findings.append({"type": "range_anomaly", "label": "Range anomaly", "severity": "warning"})
+
+    # Non-ISO date format
+    date_format = getattr(stats, "date_format", None)
+    if date_format and date_format != "iso":
+        findings.append({"type": "non_iso_format", "label": "Non-ISO format", "severity": "warning"})
+        consistency = getattr(stats, "date_format_consistency_pct", None)
+        if consistency is not None:
+            findings.append({"type": "format_consistent", "label": f"{consistency}% format-consistent", "severity": "info"})
 
     # Value list / enumeration
     if stats.semantic_role == "value_list":
