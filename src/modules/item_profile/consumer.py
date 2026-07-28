@@ -231,6 +231,7 @@ class ItemProfileConsumer:
                         "date_latest": s.date_latest,
                         "invalid_date_count": s.invalid_date_count,
                         "future_dated_count": s.future_dated_count,
+                        "barcode_stats": s.barcode_stats,
                     },
                 }
                 for s in all_stats

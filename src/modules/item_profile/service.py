@@ -135,6 +135,8 @@ class FieldStats:
     date_latest: str | None = None
     invalid_date_count: int = 0
     future_dated_count: int = 0
+    # Barcode format detection (populated when ≥80% of values are 13-digit numeric)
+    barcode_stats: dict | None = None
 
 
 def _classify_cardinality(distinct_count: int) -> str:
@@ -170,6 +172,39 @@ _SUBSIDIARY_KEYWORDS = frozenset({"subsidiary", "company", "branch", "division"}
 _ANOMALY_EXAMPLES_LIMIT = 10
 _PATTERN_VARIANTS_LIMIT = 10
 _DUPLICATE_EXAMPLES_LIMIT = 5
+_EAN13_PREVALENCE_THRESHOLD = 0.80  # fraction of non-null values that must be 13-digit numeric
+
+
+def _check_ean13(value: str) -> bool:
+    """Return True if value passes the EAN-13 check-digit test."""
+    if len(value) != 13 or not value.isdigit():
+        return False
+    digits = [int(c) for c in value]
+    total = sum(d * (3 if i % 2 else 1) for i, d in enumerate(digits[:12]))
+    return (10 - total % 10) % 10 == digits[12]
+
+
+def _detect_barcode_format(non_null: pd.Series) -> dict | None:
+    """Detect EAN-13 barcodes in a non-null string series.
+
+    Returns a stats dict when ≥80% of values are 13-digit numeric; None otherwise.
+    """
+    str_vals = non_null.astype(str)
+    total = len(str_vals)
+    if total == 0:
+        return None
+    thirteen_digit_mask = str_vals.str.match(r"^\d{13}$", na=False)
+    thirteen_count = int(thirteen_digit_mask.sum())
+    if thirteen_count / total < _EAN13_PREVALENCE_THRESHOLD:
+        return None
+    valid_count = int(str_vals[thirteen_digit_mask].apply(_check_ean13).sum())
+    invalid_count = thirteen_count - valid_count
+    return {
+        "barcode_format": "ean13",
+        "barcode_valid_count": valid_count,
+        "barcode_invalid_count": invalid_count,
+        "barcode_valid_pct": round(valid_count / thirteen_count * 100, 2),
+    }
 
 
 def _char_class_signature(value: str) -> str:
@@ -418,6 +453,8 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
         duplicate_row_count = int(str_non_null.duplicated(keep=False).sum())
         duplicate_group_count = int((vc > 1).sum())
 
+    barcode_stats: dict | None = None
+
     if detected_type == "string" and non_null_count > 0:
         lengths = non_null.astype(str).str.len()
         text_len_min = int(lengths.min())
@@ -426,6 +463,7 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
         pattern_summary = _detect_pattern(non_null)
         if pattern_summary is not None:
             anomaly_count, anomaly_examples = _detect_anomalies(non_null, pattern_summary["dominant"])
+        barcode_stats = _detect_barcode_format(non_null)
 
     outlier_count = 0
     outlier_examples: list[str] = []
@@ -509,6 +547,7 @@ def compute_field_stats(col_name: str, series: pd.Series) -> FieldStats:
         date_latest=date_latest,
         invalid_date_count=invalid_date_count,
         future_dated_count=future_dated_count,
+        barcode_stats=barcode_stats,
     )
 
 
