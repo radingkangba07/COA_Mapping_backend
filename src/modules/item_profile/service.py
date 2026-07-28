@@ -327,9 +327,31 @@ _ROLE_DATE = "date_temporal"
 _ROLE_AMBIGUOUS = "ambiguous"
 
 _FREE_TEXT_MIN_LEN_MEAN = 40.0
+_FREE_TEXT_DESCRIPTOR_MIN_LEN_MEAN = 3.0
 _FREE_TEXT_MIN_UNIQUENESS = 80.0
 _VALUE_LIST_MAX_DISTINCT = 20
 _VALUE_LIST_MAX_NULL_PCT = 20.0
+
+# Field name tokens that indicate a label or description field.
+# These fields must never be classified as identifier_candidate — they are
+# semantically descriptive even when 100% unique in a small sample.
+_DESCRIPTOR_NAME_TOKENS: frozenset[str] = frozenset({
+    "name", "description", "desc", "label", "title",
+    "note", "notes", "comment", "comments", "memo",
+    "remarks", "text", "details", "narrative",
+})
+
+
+def _is_descriptor_field(field_name: str) -> bool:
+    """Return True if any word in field_name is a known descriptor token."""
+    normalized = (
+        field_name.lower()
+        .replace("_", " ")
+        .replace("-", " ")
+        .replace("/", " ")
+        .replace(".", " ")
+    )
+    return bool(set(normalized.split()) & _DESCRIPTOR_NAME_TOKENS)
 
 
 def infer_semantic_role(
@@ -348,6 +370,7 @@ def infer_semantic_role(
         stats.uniqueness_pct >= min_uniqueness
         and stats.null_pct < max_null_pct
         and stats.cardinality == "high"
+        and not _is_descriptor_field(stats.field_name)
     )
 
     if is_identifier and has_cross_subsidiary:
@@ -375,11 +398,15 @@ def infer_semantic_role(
             f"(≤{_VALUE_LIST_MAX_DISTINCT} distinct values, <{_VALUE_LIST_MAX_NULL_PCT}% null)",
         )
 
+    is_descriptor = _is_descriptor_field(stats.field_name)
     if (
         stats.detected_type == "string"
         and stats.text_len_mean is not None
-        and stats.text_len_mean > _FREE_TEXT_MIN_LEN_MEAN
         and stats.uniqueness_pct > _FREE_TEXT_MIN_UNIQUENESS
+        and (
+            stats.text_len_mean > _FREE_TEXT_MIN_LEN_MEAN
+            or (is_descriptor and stats.text_len_mean > _FREE_TEXT_DESCRIPTOR_MIN_LEN_MEAN)
+        )
     ):
         return (
             _ROLE_FREE_TEXT,
