@@ -124,7 +124,7 @@ async def test_overview_progress_updates_after_stages_completed(
 
     ws_resp = await authenticated_client.post(
         f"/api/v1/projects/{project['id']}/workstreams",
-        json={"category_id": category_id, "name": "Stage WS"},
+        json={"category_id": category_id, "name": "Chart of Accounts"},
     )
     ws_id = ws_resp.json()["id"]
 
@@ -146,7 +146,7 @@ async def test_overview_progress_100_when_all_stages_done(authenticated_client: 
 
     ws_resp = await authenticated_client.post(
         f"/api/v1/projects/{project['id']}/workstreams",
-        json={"category_id": category_id, "name": "Complete WS"},
+        json={"category_id": category_id, "name": "Chart of Accounts"},
     )
     ws_id = ws_resp.json()["id"]
 
