@@ -141,7 +141,7 @@ async def test_delete_workstream_with_stages_returns_409(authenticated_client: A
 
     create_resp = await authenticated_client.post(
         f"/api/v1/projects/{project_id}/workstreams",
-        json={"category_id": category_id, "name": "Has Stages"},
+        json={"category_id": category_id, "name": "Chart of Accounts"},
     )
     ws_id = create_resp.json()["id"]
 
