@@ -57,7 +57,7 @@ dev-dependencies = [
 ]
 
 [tool.uv.sources]
-coa-db-models = { path = "../coa-db-models", editable = true }
+coa-db-models = { git = "https://github.com/bhavna-linkedrp/coa-db-models", branch = "develop" }
 
 # ── Ruff (replaces black, isort, flake8) ──────────────────────────────────────
 
