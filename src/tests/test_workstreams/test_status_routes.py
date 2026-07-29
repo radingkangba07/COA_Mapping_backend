@@ -40,7 +40,7 @@ async def _setup_workstream(client: AsyncClient, seed_user: dict[str, Any]) -> t
 
     ws = await client.post(
         f"/api/v1/projects/{project_id}/workstreams",
-        json={"category_id": category_id, "name": "COA Migration"},
+        json={"category_id": category_id, "name": "Chart of Accounts"},
     )
     assert ws.status_code == 201
     return project_id, ws.json()["id"]
