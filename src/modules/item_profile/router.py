@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/v1", tags=["item-profile"])
 
 
 @router.post(
-    "/projects/{project_id}/item-profile/runs",
+    "/projects/{project_id}/item-profile/run",
     response_model=RunCreateResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )

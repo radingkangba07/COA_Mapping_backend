@@ -15,7 +15,7 @@ class NATSPublisher:
         self.js = jetstream
 
     async def publish_job(self, job: Job) -> None:
-        subject = get_settings().nats_subject_job_run
+        subject = get_settings().nats_job_mapping_run
         metadata = job.input_data or {}
         payload = json.dumps(
             {

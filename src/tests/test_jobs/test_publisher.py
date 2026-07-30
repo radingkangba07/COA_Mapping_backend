@@ -46,7 +46,7 @@ async def test_publish_job_subject_and_payload():
 
     mock_js.publish.assert_called_once()
     subject, payload = mock_js.publish.call_args.args
-    assert subject == get_settings().nats_subject_job_run
+    assert subject == get_settings().nats_job_mapping_run
 
     data = json.loads(payload.decode())
     assert data["job_id"] == str(job.id)
