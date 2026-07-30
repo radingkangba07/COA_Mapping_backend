@@ -18,6 +18,7 @@ from src.modules.auth.routes import orgs_router, users_router
 from src.modules.auth.routes import router as auth_router
 from src.modules.erp.routes import legacy_erp_router
 from src.modules.erp.routes import router as erp_router
+from src.modules.item_profile.router import router as item_profile_router
 from src.modules.jobs.routes import router as jobs_router
 from src.modules.mappings.account_types.routes import router as account_types_router
 from src.modules.mappings.routes import legacy_mappings_router
@@ -28,7 +29,6 @@ from src.modules.storage.routes import files_router
 from src.modules.storage.routes import router as storage_router
 from src.modules.websocket.routes import router as websocket_router
 from src.modules.workstreams.routes import router as workstreams_router
-from src.modules.item_profile.router import router as item_profile_router
 
 logger = logging.getLogger(__name__)
 

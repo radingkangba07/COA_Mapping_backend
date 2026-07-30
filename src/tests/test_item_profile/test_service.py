@@ -1,6 +1,5 @@
 """Unit tests for ItemProfileService — CSV ingestion pathway (DAB-33)."""
 
-import io
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,7 +14,6 @@ from src.modules.item_profile.service import (
     _infer_column_type,
     _parse_csv,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -51,7 +49,7 @@ def _make_store(*, exists=True, size=100, data: bytes = b""):
 
 
 def _csv_bytes(*rows: str, header: str = "name,age,active") -> bytes:
-    lines = [header] + list(rows)
+    lines = [header, *list(rows)]
     return "\n".join(lines).encode()
 
 
@@ -118,7 +116,7 @@ class TestParseCsv:
         assert list(df.columns) == ["name", "city"]
 
     def test_empty_file_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             _parse_csv(b"")
 
     def test_header_only_no_data_rows(self):
@@ -142,9 +140,9 @@ class TestInitiateRun:
 
         with (
             patch("src.modules.item_profile.service.ensure_project_access", new=AsyncMock()),
-            patch("src.modules.item_profile.service.ProjectRepository") as MockRepo,
+            patch("src.modules.item_profile.service.ProjectRepository") as mock_repo,
         ):
-            MockRepo.return_value.get_by_id = AsyncMock(return_value=SimpleNamespace(id=project_id))
+            mock_repo.return_value.get_by_id = AsyncMock(return_value=SimpleNamespace(id=project_id))
             result = await service.initiate_run(project_id, "uploads/test.csv", user)
 
         assert result["status"] == "ingesting"
@@ -158,9 +156,9 @@ class TestInitiateRun:
 
         with (
             patch("src.modules.item_profile.service.ensure_project_access", new=AsyncMock()),
-            patch("src.modules.item_profile.service.ProjectRepository") as MockRepo,
+            patch("src.modules.item_profile.service.ProjectRepository") as mock_repo,
         ):
-            MockRepo.return_value.get_by_id = AsyncMock(return_value=SimpleNamespace(id=uuid.uuid4()))
+            mock_repo.return_value.get_by_id = AsyncMock(return_value=SimpleNamespace(id=uuid.uuid4()))
             with pytest.raises(ValidationError, match="not found in storage"):
                 await service.initiate_run(uuid.uuid4(), "uploads/missing.csv", user)
 
@@ -172,9 +170,9 @@ class TestInitiateRun:
 
         with (
             patch("src.modules.item_profile.service.ensure_project_access", new=AsyncMock()),
-            patch("src.modules.item_profile.service.ProjectRepository") as MockRepo,
+            patch("src.modules.item_profile.service.ProjectRepository") as mock_repo,
         ):
-            MockRepo.return_value.get_by_id = AsyncMock(return_value=SimpleNamespace(id=uuid.uuid4()))
+            mock_repo.return_value.get_by_id = AsyncMock(return_value=SimpleNamespace(id=uuid.uuid4()))
             with pytest.raises(PayloadTooLargeError):
                 await service.initiate_run(uuid.uuid4(), "uploads/huge.csv", user)
 
@@ -186,9 +184,9 @@ class TestInitiateRun:
 
         with (
             patch("src.modules.item_profile.service.ensure_project_access", new=AsyncMock()),
-            patch("src.modules.item_profile.service.ProjectRepository") as MockRepo,
+            patch("src.modules.item_profile.service.ProjectRepository") as mock_repo,
         ):
-            MockRepo.return_value.get_by_id = AsyncMock(return_value=None)
+            mock_repo.return_value.get_by_id = AsyncMock(return_value=None)
             from src.core.exceptions import NotFoundError
             with pytest.raises(NotFoundError):
                 await service.initiate_run(uuid.uuid4(), "uploads/test.csv", user)
