@@ -19,6 +19,7 @@ from src.modules.item_profile.service import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_user(**overrides) -> SimpleNamespace:
     defaults = {"id": uuid.uuid4(), "email": "test@example.com"}
     defaults.update(overrides)
@@ -28,9 +29,7 @@ def _make_user(**overrides) -> SimpleNamespace:
 def _make_service(*, store=None, publisher=None, run_repo=None):
     if run_repo is None:
         run_repo = AsyncMock()
-        run_repo.create_run.return_value = SimpleNamespace(
-            id=uuid.uuid4(), status="ingesting"
-        )
+        run_repo.create_run.return_value = SimpleNamespace(id=uuid.uuid4(), status="ingesting")
     session = AsyncMock()
     return ItemProfileService(
         run_repo=run_repo,
@@ -56,6 +55,7 @@ def _csv_bytes(*rows: str, header: str = "name,age,active") -> bytes:
 # ---------------------------------------------------------------------------
 # Unit tests for helper functions
 # ---------------------------------------------------------------------------
+
 
 class TestInferColumnType:
     def test_string(self):
@@ -130,6 +130,7 @@ class TestParseCsv:
 # Service: initiate_run
 # ---------------------------------------------------------------------------
 
+
 class TestInitiateRun:
     @pytest.mark.asyncio
     async def test_happy_path(self):
@@ -188,6 +189,7 @@ class TestInitiateRun:
         ):
             mock_repo.return_value.get_by_id = AsyncMock(return_value=None)
             from src.core.exceptions import NotFoundError
+
             with pytest.raises(NotFoundError):
                 await service.initiate_run(uuid.uuid4(), "uploads/test.csv", user)
 
@@ -195,6 +197,7 @@ class TestInitiateRun:
 # ---------------------------------------------------------------------------
 # Service: process_run
 # ---------------------------------------------------------------------------
+
 
 class TestProcessRun:
     @pytest.mark.asyncio

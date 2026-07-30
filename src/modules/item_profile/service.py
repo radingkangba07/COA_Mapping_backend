@@ -146,7 +146,9 @@ class ItemProfileService:
             await self.session.commit()
             logger.info(
                 "Run %s ingested: %d rows, %d fields — status=profiling_pending",
-                run_id, row_count, field_count,
+                run_id,
+                row_count,
+                field_count,
             )
 
             if self.publisher:

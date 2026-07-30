@@ -16,6 +16,7 @@ def get_item_profile_service(db: AsyncSession = Depends(get_db)) -> ItemProfileS
     publisher: ItemProfilePublisher | None = None
     try:
         from src.core.nats_client import get_jetstream
+
         publisher = ItemProfilePublisher(get_jetstream())
     except RuntimeError:
         pass
