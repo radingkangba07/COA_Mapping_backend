@@ -42,9 +42,12 @@ async def test_client() -> AsyncGenerator[AsyncClient, None]:
     settings = get_test_settings()
     test_engine = create_async_engine(settings.database_url, echo=False)
 
-    # Drop existing tables (may be stale from alembic) and recreate from models
+    # Drop existing tables (may be stale from alembic) and recreate from models.
+    # item_profile schema must exist before drop_all so SQLAlchemy can locate
+    # and drop schema-qualified tables; it is dropped explicitly in teardown.
     async with test_engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS item_profile"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
@@ -75,9 +78,10 @@ async def test_client() -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides.clear()
     nats_client._js = None
 
-    # Cleanup tables
+    # Cleanup tables and schemas
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(text("DROP SCHEMA IF EXISTS item_profile CASCADE"))
     await test_engine.dispose()
 
 
@@ -88,6 +92,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     test_engine = create_async_engine(settings.database_url, echo=False)
     async with test_engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS item_profile"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -95,6 +100,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(text("DROP SCHEMA IF EXISTS item_profile CASCADE"))
     await test_engine.dispose()
 
 
